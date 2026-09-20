@@ -34,6 +34,7 @@ async def lifespan(_app):
 app = FastAPI(title="Faces (local)", lifespan=lifespan)
 app.mount("/crops", StaticFiles(directory=CROPS, check_dir=False), name="crops")
 INDEX = ROOT / "static" / "index.html"
+NO_CACHE = {"Cache-Control": "no-cache"}         # the page must never be stale after a redesign
 
 
 class SubmitBody(BaseModel):
@@ -53,13 +54,13 @@ def _gallery_or_404(con, key: str) -> dict:
 # ---------------------------------------------------------------- pages
 @app.get("/")
 def index():
-    return FileResponse(INDEX)
+    return FileResponse(INDEX, headers=NO_CACHE)
 
 
 @app.get("/g/{slug}")
 def gallery_page(slug: str):
     """Shareable short link — same page, opened straight to this gallery's face wall."""
-    return FileResponse(INDEX)
+    return FileResponse(INDEX, headers=NO_CACHE)
 
 
 # ---------------------------------------------------------------- galleries

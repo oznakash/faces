@@ -4,72 +4,104 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Faces</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400&display=swap" rel="stylesheet">
 <style>
-  :root{--bg:#fafafa;--fg:#111;--muted:#6b6b6b;--line:#e6e6e6;--card:#fff;--accent:#0a84ff;--ok:#1a8f4a;--warn:#b8860b;--bad:#c0392b}
-  @media (prefers-color-scheme:dark){:root{--bg:#0f0f10;--fg:#f2f2f2;--muted:#9a9a9a;--line:#262628;--card:#171719;--accent:#3a9bff}}
+  /* Tokens — docs/DESIGN-GUIDELINES.md §2. No other colors, no bold, no radius, no shadows. */
+  :root{--page:#f0f0f0;--surface:#f7f7f7;--surface-2:#fff;--ink:#0d0b0b;--ink-2:#7a7a7a;--ink-3:#bdbdbd;
+        --hair:#dedede;--hair-2:#d6d6d6;--accent:#6385ff;--accent-hover:#4a63bd;--accent-down:#4259ab;
+        --overlay:rgba(205,207,210,.6);--overlay-ink:rgba(13,11,11,.6);--danger:#cc1e1e}
   *{box-sizing:border-box}
-  body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.5 -apple-system,BlinkMacSystemFont,"SF Pro Text",Inter,system-ui,sans-serif;-webkit-font-smoothing:antialiased}
-  header{padding:40px 24px 8px;max-width:1200px;margin:0 auto}
-  h1{font-size:34px;letter-spacing:-.02em;margin:0 0 4px;font-weight:700}
-  .sub{color:var(--muted);margin:0 0 24px}
-  main{max-width:1200px;margin:0 auto;padding:0 24px 80px}
-  form{display:flex;gap:10px;flex-wrap:wrap}
-  input[type=url]{flex:1;min-width:260px;font:inherit;padding:12px 14px;border:1px solid var(--line);border-radius:12px;background:var(--card);color:var(--fg)}
-  input[type=url]:focus{outline:2px solid var(--accent);outline-offset:0;border-color:transparent}
-  button{font:inherit;font-weight:600;padding:12px 18px;border:0;border-radius:12px;background:var(--accent);color:#fff;cursor:pointer}
-  button.ghost{background:transparent;color:var(--accent);padding:8px 10px}
-  button:disabled{opacity:.5;cursor:default}
-  .status{margin:18px 0 8px;display:flex;gap:14px;align-items:center;flex-wrap:wrap;color:var(--muted);min-height:24px}
-  .bar{height:6px;background:var(--line);border-radius:6px;overflow:hidden;flex:1;min-width:160px}
-  .bar i{display:block;height:100%;width:0;background:var(--accent);transition:width .3s}
-  .pill{font-size:12px;padding:3px 9px;border-radius:999px;background:var(--line);color:var(--fg)}
-  .pill.ok{background:color-mix(in srgb,var(--ok) 15%,transparent);color:var(--ok)}
-  .pill.warn{background:color-mix(in srgb,var(--warn) 15%,transparent);color:var(--warn)}
-  .pill.bad{background:color-mix(in srgb,var(--bad) 15%,transparent);color:var(--bad)}
-  .note{font-size:13px;color:var(--muted);margin:0 0 16px}
-  h2{font-size:18px;margin:28px 0 12px;display:flex;align-items:baseline;gap:10px}
-  h2 small{color:var(--muted);font-weight:400;font-size:14px}
-  .wall{display:grid;grid-template-columns:repeat(auto-fill,minmax(112px,1fr));gap:12px}
-  .face{background:var(--card);border:1px solid var(--line);border-radius:14px;overflow:hidden;cursor:pointer;transition:transform .12s,box-shadow .12s;text-align:center}
-  .face:hover{transform:translateY(-2px);box-shadow:0 8px 24px rgba(0,0,0,.08)}
-  .face.active{outline:2px solid var(--accent)}
-  .face img{width:100%;aspect-ratio:1;object-fit:cover;display:block;background:var(--line)}
-  .face .n{font-size:12px;color:var(--muted);padding:6px 4px}
-  .face .n b{color:var(--fg);font-weight:600}
-  .photos{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:12px}
-  .ph{position:relative;background:var(--card);border:1px solid var(--line);border-radius:12px;overflow:hidden}
-  .ph img{width:100%;aspect-ratio:4/3;object-fit:cover;display:block;background:var(--line)}
-  .ph a{position:absolute;inset:0}
-  .ph .s{position:absolute;right:8px;bottom:8px;font-size:11px;background:rgba(0,0,0,.55);color:#fff;padding:2px 7px;border-radius:999px}
-  .empty{color:var(--muted);padding:40px 0;text-align:center}
-  .row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
-  .drop{border:1.5px dashed var(--line);border-radius:12px;padding:14px;color:var(--muted);display:flex;gap:12px;align-items:center;cursor:pointer;background:var(--card)}
-  .drop img{width:56px;height:56px;border-radius:10px;object-fit:cover}
+  html{background:var(--page)}
+  body{margin:0;background:var(--page);color:var(--ink);font:400 15px/1.55 Roboto,Helvetica,Arial,sans-serif;-webkit-font-smoothing:antialiased}
+  a{color:var(--ink)}
+  h1,h2,h3{font-weight:400;margin:0}
+  button{font:inherit;font-weight:400;cursor:pointer}
+
+  /* Header — the only full-width hairline */
+  .top{border-bottom:1px solid var(--hair)}
+  .top .in{max-width:1200px;margin:0 auto;padding:18px 24px;display:flex;align-items:baseline;justify-content:space-between}
+  .mark{font-size:22px;font-weight:300;letter-spacing:.12em;text-transform:uppercase;text-decoration:none;cursor:pointer}
+  .top nav a{font-size:13px;text-decoration:none;color:var(--ink);cursor:pointer}
+  .top nav a:hover{text-decoration:underline}
+
+  main{max-width:1200px;margin:0 auto;padding:36px 24px 80px}
+  .sub{color:var(--ink-2);margin:0 0 22px;overflow-wrap:anywhere}
+  .note,.status,.empty,h2 small{overflow-wrap:anywhere}
+  h1{font-size:28px;letter-spacing:-.005em;margin:0 0 4px}
+  h2{font-size:17px;margin:40px 0 12px;display:flex;align-items:baseline;gap:10px;flex-wrap:wrap}
+  h2 small{color:var(--ink-2);font-size:13px}
+
+  form{display:flex;gap:8px;flex-wrap:wrap}
+  input[type=url]{flex:1 1 220px;min-width:min(260px,100%);font:inherit;padding:12px 14px;border:1px solid var(--hair-2);border-radius:0;background:var(--surface);color:var(--ink)}
+  input[type=url]::placeholder{color:var(--ink-3)}
+  input[type=url]:focus{outline:none;border-color:var(--accent)}
+  .btn{padding:12px 18px;border:0;border-radius:0;background:var(--accent);color:#fff;transition:background-color .12s ease}
+  .btn:hover{background:var(--accent-hover)} .btn:active{background:var(--accent-down)} .btn:disabled{opacity:.5;cursor:default}
+  .ghost{background:transparent;border:0;padding:0;color:var(--ink);font-size:13px}
+  .ghost:hover{text-decoration:underline}
+
+  .status{margin:22px 0 6px;display:flex;gap:14px;align-items:center;flex-wrap:wrap;color:var(--ink-2);min-height:22px;font-size:13px}
+  .bar{height:2px;background:var(--hair);flex:1;min-width:160px}
+  .bar i{display:block;height:100%;width:0;background:var(--accent);transition:width .3s ease}
+  .pill{font-size:11px;letter-spacing:.08em;text-transform:uppercase;padding:3px 8px;border:1px solid var(--hair);color:var(--ink-2)}
+  .pill.ok,.pill.warn{color:var(--ink)}
+  .pill.bad{color:var(--danger);border-color:var(--danger)}
+  .note{font-size:12px;color:var(--ink-2);margin:0 0 8px}
+
+  /* Face wall — square crops, tight gallery gaps, no chrome */
+  .wall{display:grid;grid-template-columns:repeat(auto-fill,minmax(104px,1fr));gap:6px}
+  .face{cursor:pointer;text-align:center;outline:1px solid transparent;outline-offset:-1px;transition:outline-color .12s ease}
+  .face:hover{outline-color:var(--accent)}
+  .face.active{outline:2px solid var(--accent);outline-offset:-2px}
+  .face img{width:100%;aspect-ratio:1;object-fit:cover;display:block;background:var(--surface-2)}
+  .face .n{font-size:12px;color:var(--ink-2);padding:5px 2px 8px}
+  .face .n b{font-weight:400;color:var(--ink)}
+
+  /* Photo tiles — 4:3, hover overlay band like the source site's tile-info */
+  .photos{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:8px}
+  .ph{position:relative;background:var(--surface-2)}
+  .ph img{width:100%;aspect-ratio:4/3;object-fit:cover;display:block}
+  .ph a{position:absolute;inset:0;color:var(--overlay-ink);text-decoration:none}
+  .ph a::after{content:"Open original \2197";position:absolute;left:0;right:0;bottom:0;padding:6px 10px;font-size:12px;background:var(--overlay);opacity:0;transition:opacity .12s ease}
+  .ph:hover a::after{opacity:1}
+  .ph .s{position:absolute;right:0;top:0;font-size:11px;letter-spacing:.06em;background:var(--overlay);color:var(--overlay-ink);padding:3px 8px}
+
+  .empty{color:var(--ink-2);padding:40px 0;text-align:center}
+  .drop{border:1px solid var(--hair-2);background:var(--surface);padding:14px;color:var(--ink-2);display:flex;gap:12px;align-items:center;cursor:pointer;font-size:13px}
+  .drop:hover{border-color:var(--accent)}
+  .drop img{width:56px;height:56px;object-fit:cover}
   .hidden{display:none}
+  .privacy{font-size:12px;color:var(--ink-2);margin-top:8px}
+
+  /* Gallery list (home) */
   .list{display:flex;flex-direction:column;gap:8px}
-  .g{display:grid;grid-template-columns:1fr auto;gap:6px 16px;align-items:center;background:var(--card);border:1px solid var(--line);border-radius:14px;padding:12px 14px;cursor:pointer}
+  .g{display:grid;grid-template-columns:1fr auto;gap:4px 16px;align-items:center;background:var(--surface);border:1px solid var(--hair);padding:14px 16px;cursor:pointer;transition:border-color .12s ease}
   .g:hover{border-color:var(--accent)}
-  .g .t{font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-  .g .u{font-size:12px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;grid-column:1}
-  .g .m{font-size:13px;color:var(--muted);grid-column:1}
+  .g .t{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .g .u,.g .m{font-size:12px;color:var(--ink-2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;grid-column:1}
+  .g .m{font-size:13px}
   .g .link{grid-row:1/4;display:flex;flex-direction:column;align-items:flex-end;gap:6px}
-  .g code{font-size:12px;background:var(--line);padding:3px 8px;border-radius:8px}
-  .g .copy{font-size:12px;padding:6px 10px;background:var(--line);color:var(--fg);border-radius:999px;font-weight:500}
-  .back{margin:14px 0 0}
-  .privacy{font-size:12px;color:var(--muted);margin-top:8px}
+  .g code{font:12px/1.3 Roboto,Helvetica,Arial,sans-serif;border:1px solid var(--hair);padding:5px 8px;background:var(--surface-2);max-width:100%;overflow-wrap:anywhere}
+  .g .copy{font-size:12px;background:transparent;border:0;padding:0;color:var(--ink)}
+  .g .copy:hover{text-decoration:underline}
+  .back{margin:0 0 18px;font-size:13px}
+  @media (max-width:600px){ main{padding:24px 16px 60px} .top .in{padding:14px 16px} .g .link{grid-row:auto;align-items:flex-start} .g{grid-template-columns:1fr} }
 </style>
 </head>
 <body>
-<header>
-  <h1>Faces</h1>
-  <p class="sub">Point it at a public photo gallery. See everyone who's in it. Find every photo you're in.</p>
-</header>
+<div class="top"><div class="in">
+  <a class="mark" id="mark">Faces</a>
+  <nav><a id="navHome">Galleries</a></nav>
+</div></div>
 <main>
+  <h1 id="pageTitle">Point it at a public photo gallery.</h1>
+  <p class="sub" id="pageSub">See everyone who's in it. Find every photo you're in.</p>
   <form id="f">
     <input id="url" type="url" required placeholder="https://… a gallery page" autocomplete="off">
-    <button id="go" type="submit">Index gallery</button>
+    <button id="go" type="submit" class="btn">Index gallery</button>
   </form>
-  <p class="back hidden" id="back"><button class="ghost" id="backBtn">← All indexed galleries</button></p>
+  <p class="back hidden" id="back"><button class="ghost" id="backBtn">&larr; All indexed galleries</button></p>
 
   <section id="listSec">
     <h2>Indexed galleries <small id="listCount"></small></h2>
@@ -133,13 +165,14 @@ async function loadGalleries(){
 function home(){
   gid = null; if (es) es.close();
   history.replaceState(null, '', '/');
+  $('#pageTitle').textContent = 'Point it at a public photo gallery.';
+  $('#pageSub').textContent = "See everyone who's in it. Find every photo you're in.";
   ['#wallSec','#personSec','#search','#back'].forEach(x => $(x).classList.add('hidden'));
   $('#listSec').classList.remove('hidden'); setStatus(''); $('#note').textContent = '';
   loadGalleries();
 }
 $('#backBtn').onclick = home;
-document.querySelector('h1').style.cursor = 'pointer';
-document.querySelector('h1').onclick = home;
+$('#mark').onclick = home; $('#navHome').onclick = home;
 
 // ---------- submit
 $('#f').onsubmit = async e => {
@@ -169,6 +202,7 @@ async function open(key){
   es.addEventListener('status', e => {
     const g = JSON.parse(e.data);
     if (g.url_canonical) $('#url').value = g.url_canonical;
+    if (g.title) { $('#pageTitle').textContent = g.title; $('#pageSub').textContent = g.url_canonical; }
     if (g.status === 'ingesting') setStatus(`${pill('opening gallery')} <span>scrolling the page to find every photo…</span>`);
     if (g.notes) $('#note').textContent = g.notes.join(' · ');
     if (g.message && !g.notes) $('#note').textContent = g.message;

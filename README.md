@@ -62,6 +62,7 @@ On an M1 Pro, expect ~1.2 s per image on CPU; a 1,000-image gallery is roughly 2
 | [**Executive Summary**](docs/EXEC-SUMMARY.md) | The whole project in two minutes — start here |
 | [**PRD**](docs/PRD.md) | Why, what, how · 4 jobs-to-be-done · definition of done · definition of good · 45 test cases |
 | [**Technical Spec**](docs/TECH-SPEC.md) | Architecture, adapters, pipeline, clustering, data model, evaluation, cost, privacy, risks |
+| [**Design Guidelines**](docs/DESIGN-GUIDELINES.md) | Tokens, type, layout and components — the look of the source galleries, applied to a people index. The UI implements this and nothing else |
 
 ## Test fixtures
 
