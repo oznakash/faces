@@ -177,6 +177,7 @@ v1 ships when **every** item below is true. These are binary, not aspirational.
 - [ ] **D5** Results stream during indexing — first faces visible before the job completes.
 - [ ] **D6** Re-submitting an already-indexed URL returns cached results without re-processing.
 - [ ] **D7** Selected photos can be downloaded or shared via a stable link.
+- [ ] **D7a** Every indexed gallery has a short, stable, shareable link (`/g/<slug>`) that opens straight to its face wall — faces → photos → the original on the source page, with no setup for the viewer. The home page lists every indexed gallery with its link.
 
 ### Quality gates
 
@@ -188,7 +189,7 @@ v1 ships when **every** item below is true. These are binary, not aspirational.
 ### Safety, privacy, and legal
 
 - [ ] **D12** Selfies and their embeddings are never persisted to disk and are purged at session end or 30 minutes, whichever is first.
-- [ ] **D13** Gallery indexes expire automatically (default 30 days) and there is a working one-click delete.
+- [ ] **D13** Hosted: gallery indexes expire automatically (default 30 days). Local: nothing expires and nothing is deleted except by explicit request. In both, there is a working one-click delete, and finished work is never discarded by a restart or a retry.
 - [ ] **D14** A privacy notice explains, in plain language, what is processed, where it goes, and how long it lives — shown before the first upload, not buried.
 - [ ] **D15** A takedown path exists for gallery owners and for individuals, with a documented SLA.
 - [ ] **D16** Ingestion is user-directed and page-scoped: it loads only the page the user pasted (plus the images it displays and, when needed, each photo's own page), never crawls a site, never bypasses a bot challenge or login, and never mirrors source images. This posture is documented and honest about the trade-off it makes (Tech Spec §3.3).
@@ -324,7 +325,8 @@ FIX-1 and FIX-2 are the same event, which makes them a useful pair: the same peo
 | T-E2 | Full index, per 1,000 images | ≤ 7 min |
 | T-E3 | Browser closed and reopened mid-job | Job continues server-side; returning to the URL shows current progress |
 | T-E4 | Face wall on a 375px-wide mobile viewport | Usable; crops legible; no horizontal scroll |
-| T-E5 | Every result photo | Deep-links to its page on the source gallery and opens correctly |
+| T-E5 | Every result photo | Opens the original on the source gallery's own page, in a new tab |
+| T-E8 | Open a gallery's short link in a fresh browser session | Face wall loads directly; faces → photos → originals all work with no other state |
 | T-E6 | Job fails for any reason | Specific, actionable message; never a bare "something went wrong" |
 | T-E7 | Keyboard and screen-reader navigation of the face wall | Focusable, labeled, operable *(manual)* |
 

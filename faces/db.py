@@ -16,6 +16,7 @@ SCHEMA = """
 CREATE TABLE IF NOT EXISTS galleries (
   id                 TEXT PRIMARY KEY,
   url_canonical      TEXT NOT NULL UNIQUE,
+  slug               TEXT UNIQUE,              -- short shareable key: /g/{slug}
   host               TEXT,
   adapter            TEXT,
   title              TEXT,
@@ -31,7 +32,7 @@ CREATE TABLE IF NOT EXISTS galleries (
   faces_excluded     INTEGER NOT NULL DEFAULT 0,
   created_at         TEXT NOT NULL,
   indexed_at         TEXT,
-  expires_at         TEXT NOT NULL
+  expires_at         TEXT                      -- NULL = never (local profile). Production sets a TTL.
 );
 
 CREATE TABLE IF NOT EXISTS images (
@@ -92,7 +93,46 @@ def init() -> None:
     con = connect()
     with con:
         con.executescript(SCHEMA)
+        cols = {r["name"] for r in con.execute("PRAGMA table_info(galleries)")}
+        if "slug" not in cols:                       # migrate a pre-slug database in place
+            con.execute("ALTER TABLE galleries ADD COLUMN slug TEXT")
+            con.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_galleries_slug ON galleries(slug)")
+        for r in con.execute("SELECT id FROM galleries WHERE slug IS NULL").fetchall():
+            con.execute("UPDATE galleries SET slug=? WHERE id=?", (new_slug(con), r["id"]))
+    _relax_expiry(con)
     con.close()
+
+
+def _relax_expiry(con) -> None:
+    """Older local DBs declared expires_at NOT NULL. Rebuild the table so it is
+    optional, keeping every row. Children keep their rows: FK enforcement is
+    off for the rebuild, and their REFERENCES resolve by name to the new table."""
+    info = {r["name"]: r for r in con.execute("PRAGMA table_info(galleries)")}
+    if not info["expires_at"]["notnull"]:
+        return
+    ddl = SCHEMA.split("CREATE TABLE IF NOT EXISTS galleries")[1].split(";")[0]
+    con.execute("PRAGMA foreign_keys=OFF")
+    try:
+        with con:
+            con.execute("CREATE TABLE galleries_new" + ddl)
+            cols = ", ".join(info.keys())
+            con.execute(f"INSERT INTO galleries_new ({cols}) SELECT {cols} FROM galleries")
+            con.execute("DROP TABLE galleries")
+            con.execute("ALTER TABLE galleries_new RENAME TO galleries")
+            con.execute("UPDATE galleries SET expires_at=NULL")
+    finally:
+        con.execute("PRAGMA foreign_keys=ON")
+
+
+_ALPHABET = "abcdefghijkmnpqrstuvwxyz23456789"   # no 0/o/1/l — links get read aloud
+
+
+def new_slug(con, n: int = 6) -> str:
+    import secrets
+    while True:
+        slug = "".join(secrets.choice(_ALPHABET) for _ in range(n))
+        if not con.execute("SELECT 1 FROM galleries WHERE slug=?", (slug,)).fetchone():
+            return slug
 
 
 def new_id() -> str:
@@ -103,7 +143,10 @@ def now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
-def ttl(days: int = 30) -> str:
+def ttl(days: int | None = None) -> str | None:
+    """Local profile: indexes never expire and nothing is deleted except on request."""
+    if days is None:
+        return None
     return (datetime.now(timezone.utc) + timedelta(days=days)).isoformat()
 
 

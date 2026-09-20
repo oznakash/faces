@@ -67,24 +67,43 @@ def start(url: str) -> tuple[str, bool]:
     if row and row["status"] in ("ready", "partial"):
         con.close()
         return row["id"], True
-    if row and row["status"] in ("queued", "ingesting", "processing") and row["id"] in _jobs \
-            and _jobs[row["id"]].is_alive():
+    if row:
+        gid = row["id"]
+        if gid in _jobs and _jobs[gid].is_alive():     # already running
+            con.close()
+            return gid, False
+        # failed or interrupted: RESUME — finished work is never thrown away
+        _set(con, gid, status="queued", failure_code=None)
         con.close()
-        return row["id"], False
-    if row:                                            # failed or orphaned: start over
-        with con:
-            con.execute("DELETE FROM galleries WHERE id=?", (row["id"],))
+        t = threading.Thread(target=_run, args=(gid, canon), daemon=True, name=f"index-{gid[:8]}")
+        _jobs[gid] = t
+        t.start()
+        return gid, False
     gid = db.new_id()
     with con:
         con.execute(
-            "INSERT INTO galleries (id,url_canonical,host,adapter,status,created_at,expires_at)"
-            " VALUES (?,?,?,?,?,?,?)",
-            (gid, canon, urlparse(canon).netloc, None, "queued", db.now(), db.ttl()))
+            "INSERT INTO galleries (id,slug,url_canonical,host,adapter,status,created_at,expires_at)"
+            " VALUES (?,?,?,?,?,?,?,?)",
+            (gid, db.new_slug(con), canon, urlparse(canon).netloc, None, "queued", db.now(), db.ttl()))
     con.close()
     t = threading.Thread(target=_run, args=(gid, canon), daemon=True, name=f"index-{gid[:8]}")
     _jobs[gid] = t
     t.start()
     return gid, False
+
+
+def resume_orphans() -> int:
+    """At startup: any job a previous process left mid-flight continues from where it was."""
+    con = db.connect()
+    rows = con.execute(
+        "SELECT id, url_canonical FROM galleries WHERE status IN ('queued','ingesting','processing')").fetchall()
+    con.close()
+    for r in rows:
+        t = threading.Thread(target=_run, args=(r["id"], r["url_canonical"]), daemon=True,
+                             name=f"index-{r['id'][:8]}")
+        _jobs[r["id"]] = t
+        t.start()
+    return len(rows)
 
 
 def delete(gallery_id: str):
@@ -191,37 +210,50 @@ def _run(gid: str, url: str):
     con = db.connect()
     t0 = time.time()
     try:
-        # ---- 1. resolve manifest
-        _set(con, gid, status="ingesting")
-        publish(gid, "status", {"status": "ingesting", "message": "Opening the gallery…"})
+        # ---- 1. resolve manifest (skipped on resume: the manifest is already in the images table)
+        have = con.execute("SELECT COUNT(*) FROM images WHERE gallery_id=?", (gid,)).fetchone()[0]
+        if have == 0:
+            _set(con, gid, status="ingesting")
+            publish(gid, "status", {"status": "ingesting", "message": "Opening the gallery…"})
 
-        def on_progress(n):
-            publish(gid, "progress", {"phase": "harvest", "images_total": n})
+            def on_progress(n):
+                publish(gid, "progress", {"phase": "harvest", "images_total": n})
 
-        man = adapters.resolve(url, progress=on_progress)
-        if not man.images:
-            raise RuntimeError("NO_IMAGES_FOUND")
-        images = man.images[: int(cfg.limits.max_images)]
-        with con:
-            con.executemany(
-                "INSERT OR IGNORE INTO images (id,gallery_id,source_url,page_url,fallback_url) VALUES (?,?,?,?,?)",
-                [(db.new_id(), gid, i["source_url"], i["page_url"], i.get("fallback_url")) for i in images])
-        _set(con, gid, adapter=man.adapter, title=man.title, expected_count=man.expected_count,
-             completeness_known=int(man.completeness_known), images_total=len(images),
-             message="; ".join(man.notes), status="processing")
-        log.info("%s manifest: %d images (%s)", gid[:8], len(images), "; ".join(man.notes))
-        publish(gid, "status", {"status": "processing", "images_total": len(images),
-                                "notes": man.notes})
+            man = adapters.resolve(url, progress=on_progress)
+            if not man.images:
+                raise RuntimeError("NO_IMAGES_FOUND")
+            images = man.images[: int(cfg.limits.max_images)]
+            with con:
+                con.executemany(
+                    "INSERT OR IGNORE INTO images (id,gallery_id,source_url,page_url,fallback_url) VALUES (?,?,?,?,?)",
+                    [(db.new_id(), gid, i["source_url"], i["page_url"], i.get("fallback_url")) for i in images])
+            _set(con, gid, adapter=man.adapter, title=man.title, expected_count=man.expected_count,
+                 completeness_known=int(man.completeness_known), images_total=len(images),
+                 message="; ".join(man.notes), status="processing")
+            log.info("%s manifest: %d images (%s)", gid[:8], len(images), "; ".join(man.notes))
+            publish(gid, "status", {"status": "processing", "images_total": len(images),
+                                    "notes": man.notes})
+        else:
+            log.info("%s resuming: %d images already in manifest", gid[:8], have)
+            _set(con, gid, status="processing")
+            publish(gid, "status", {"status": "processing", "images_total": have,
+                                    "notes": ["resumed after restart"]})
+        images_total = con.execute("SELECT COUNT(*) FROM images WHERE gallery_id=?", (gid,)).fetchone()[0]
 
         # ---- 2. warm the models once, before the fetch pool starts
         models.get_app()
 
         # ---- 3. fetch in parallel, infer serially
+        og_cache: dict = {}
         pending = con.execute(
             "SELECT id, source_url, page_url, fallback_url FROM images WHERE gallery_id=? AND status='pending'",
             (gid,)).fetchall()
-        og_cache: dict = {}
-        done = failed = faces = excluded = 0
+        agg = con.execute(
+            "SELECT SUM(status='done') AS d, SUM(status='failed') AS f,"
+            " (SELECT COUNT(*) FROM faces WHERE gallery_id=? AND embedding IS NOT NULL) AS k,"
+            " (SELECT COUNT(*) FROM faces WHERE gallery_id=? AND embedding IS NULL) AS x"
+            " FROM images WHERE gallery_id=?", (gid, gid, gid)).fetchone()
+        done, failed, faces, excluded = (int(agg["d"] or 0), int(agg["f"] or 0), int(agg["k"]), int(agg["x"]))
         since_cluster = 0
         headers = {"User-Agent": adapters.UA, "Referer": url}
         with httpx.Client(headers=headers, follow_redirects=True, http2=False) as client, \
@@ -248,7 +280,7 @@ def _run(gid: str, url: str):
                     log.warning("%s image failed: %s (%s)", gid[:8], code, row["source_url"][-40:])
                 _set(con, gid, images_done=done, images_failed=failed, faces_found=faces,
                      faces_excluded=excluded)
-                publish(gid, "progress", {"phase": "process", "images_total": len(images),
+                publish(gid, "progress", {"phase": "process", "images_total": images_total,
                                           "images_done": done, "images_failed": failed,
                                           "faces_found": faces, "faces_excluded": excluded,
                                           "elapsed": round(time.time() - t0, 1)})

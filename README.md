@@ -14,6 +14,8 @@ Photo galleries are published as a flat wall of images. A conference, a wedding,
 
 **Find me** — paste a gallery URL and add a selfie. Faces returns every photo in that gallery containing that face, ranked by confidence, split into *confident* and *possible* matches.
 
+**Share it** — every indexed gallery gets a short link (`/g/abc123`) that opens straight to its face wall, and the home page lists everything indexed so far.
+
 Every result links back to the original photo on the source gallery. Faces is a lens on someone else's gallery, not a copy of it.
 
 ## What it deliberately does not do
@@ -47,7 +49,9 @@ Requires Python 3.12+. First run downloads the face models (~280 MB) and a headl
 ./run.sh
 ```
 
-Then open <http://localhost:8000>, paste a gallery URL, and watch the wall fill in. Everything — the index, face crops, and thresholds — lives under `./data/` and `config/thresholds.yaml`. Delete `data/` to start clean.
+Then open <http://localhost:8000>, paste a gallery URL, and watch the wall fill in. Everything — the index, face crops, and thresholds — lives under `./data/` and `config/thresholds.yaml`.
+
+**Nothing is ever deleted on its own.** Indexed galleries persist across restarts, a job interrupted by a restart resumes where it was, and re-submitting a URL that failed resumes rather than starting over. The only way an index goes away is the delete button (or removing `data/` yourself).
 
 On an M1 Pro, expect ~1.2 s per image on CPU; a 1,000-image gallery is roughly 20 minutes. Faces stream in as they're found, so the wall is usable long before the run finishes.
 

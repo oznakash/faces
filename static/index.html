@@ -46,8 +46,16 @@
   .drop{border:1.5px dashed var(--line);border-radius:12px;padding:14px;color:var(--muted);display:flex;gap:12px;align-items:center;cursor:pointer;background:var(--card)}
   .drop img{width:56px;height:56px;border-radius:10px;object-fit:cover}
   .hidden{display:none}
-  .recent{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}
-  .recent button{font-size:12px;padding:6px 10px;background:var(--line);color:var(--fg);border-radius:999px;font-weight:500;max-width:360px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .list{display:flex;flex-direction:column;gap:8px}
+  .g{display:grid;grid-template-columns:1fr auto;gap:6px 16px;align-items:center;background:var(--card);border:1px solid var(--line);border-radius:14px;padding:12px 14px;cursor:pointer}
+  .g:hover{border-color:var(--accent)}
+  .g .t{font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .g .u{font-size:12px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;grid-column:1}
+  .g .m{font-size:13px;color:var(--muted);grid-column:1}
+  .g .link{grid-row:1/4;display:flex;flex-direction:column;align-items:flex-end;gap:6px}
+  .g code{font-size:12px;background:var(--line);padding:3px 8px;border-radius:8px}
+  .g .copy{font-size:12px;padding:6px 10px;background:var(--line);color:var(--fg);border-radius:999px;font-weight:500}
+  .back{margin:14px 0 0}
   .privacy{font-size:12px;color:var(--muted);margin-top:8px}
 </style>
 </head>
@@ -61,7 +69,12 @@
     <input id="url" type="url" required placeholder="https://… a gallery page" autocomplete="off">
     <button id="go" type="submit">Index gallery</button>
   </form>
-  <div class="recent" id="recent"></div>
+  <p class="back hidden" id="back"><button class="ghost" id="backBtn">← All indexed galleries</button></p>
+
+  <section id="listSec">
+    <h2>Indexed galleries <small id="listCount"></small></h2>
+    <div class="list" id="list"></div>
+  </section>
 
   <div class="status" id="status"></div>
   <p class="note" id="note"></p>
@@ -95,13 +108,38 @@ const fmt = n => (n ?? 0).toLocaleString();
 function pill(text, cls){ return `<span class="pill ${cls||''}">${text}</span>`; }
 function setStatus(html){ $('#status').innerHTML = html; }
 
-// ---------- recent galleries
-async function loadRecent(){
+// ---------- indexed galleries (home)
+async function loadGalleries(){
   const r = await fetch('/api/galleries'); const list = await r.json();
-  $('#recent').innerHTML = list.slice(0,8).map(g =>
-    `<button data-id="${g.id}" title="${g.url_canonical}">${g.title || g.url_canonical.replace(/^https?:\/\//,'')} · ${fmt(g.people)} people</button>`).join('');
-  $('#recent').querySelectorAll('button').forEach(b => b.onclick = () => open(b.dataset.id));
+  $('#listCount').textContent = list.length ? `${list.length} · each has a short link you can share` : '';
+  $('#list').innerHTML = list.length ? list.map(g => {
+    const st = g.status === 'ready' ? pill('ready','ok') : g.status === 'partial' ? pill('partial','warn')
+             : g.status === 'failed' ? pill('failed','bad') : pill(g.status);
+    const when = g.indexed_at ? new Date(g.indexed_at).toLocaleDateString() : '';
+    return `<div class="g" data-key="${g.slug}">
+      <div class="t">${g.title || g.host}</div>
+      <div class="link"><code>${location.origin}/g/${g.slug}</code><button class="copy" data-slug="${g.slug}">Copy link</button></div>
+      <div class="u">${g.url_canonical}</div>
+      <div class="m">${st} ${fmt(g.people)} people · ${fmt(g.images_done)} photos · ${fmt(g.faces_found)} faces${when?` · ${when}`:''}</div>
+    </div>`; }).join('')
+    : `<div class="empty">Nothing indexed yet. Paste a gallery URL above.</div>`;
+  $('#list').querySelectorAll('.g').forEach(el => el.onclick = () => open(el.dataset.key));
+  $('#list').querySelectorAll('.copy').forEach(b => b.onclick = async e => {
+    e.stopPropagation();
+    await navigator.clipboard.writeText(`${location.origin}/g/${b.dataset.slug}`);
+    b.textContent = 'Copied'; setTimeout(() => b.textContent = 'Copy link', 1200);
+  });
 }
+function home(){
+  gid = null; if (es) es.close();
+  history.replaceState(null, '', '/');
+  ['#wallSec','#personSec','#search','#back'].forEach(x => $(x).classList.add('hidden'));
+  $('#listSec').classList.remove('hidden'); setStatus(''); $('#note').textContent = '';
+  loadGalleries();
+}
+$('#backBtn').onclick = home;
+document.querySelector('h1').style.cursor = 'pointer';
+document.querySelector('h1').onclick = home;
 
 // ---------- submit
 $('#f').onsubmit = async e => {
@@ -111,14 +149,18 @@ $('#f').onsubmit = async e => {
     body: JSON.stringify({url: $('#url').value})});
   $('#go').disabled = false;
   if (!r.ok){ const err = await r.json(); setStatus(pill(err.detail?.message || 'Error','bad')); return; }
-  const {gallery_id} = await r.json();
-  open(gallery_id);
+  const {slug} = await r.json();
+  open(slug);
 };
 
 // ---------- open a gallery: stream progress, then render
-function open(id){
-  gid = id;
-  history.replaceState(null, '', `?g=${id}`);
+async function open(key){
+  const gr = await fetch(`/api/galleries/${key}`);
+  if (!gr.ok){ setStatus(pill('not found','bad') + " that link doesn't point at an indexed gallery"); return; }
+  const g0 = await gr.json();
+  gid = g0.id; const id = gid;
+  history.replaceState(null, '', `/g/${g0.slug}`);
+  $('#listSec').classList.add('hidden'); $('#back').classList.remove('hidden');
   if (es) es.close();
   $('#wall').innerHTML = ''; $('#wallSec').classList.add('hidden');
   $('#personSec').classList.add('hidden'); $('#search').classList.add('hidden');
@@ -140,11 +182,11 @@ function open(id){
   });
   es.addEventListener('clusters', e => { renderWall(JSON.parse(e.data).provisional); });
   es.addEventListener('done', e => {
-    const d = JSON.parse(e.data);
+    const d = JSON.parse(e.data); if (d.faces_excluded == null && d.faces_found != null) d.faces_excluded = d.faces_excluded ?? 0;
     const st = d.status === 'ready' ? pill('ready','ok') : d.status === 'partial' ? pill('partial','warn') : pill(d.status,'bad');
     setStatus(`${st} <span>${fmt(d.images_done)} photos · ${fmt(d.faces_found)} faces (${fmt(d.faces_excluded)} excluded for quality) · ${fmt(d.people)} people${d.elapsed?` · ${d.elapsed}s`:''}</span>`);
     if (d.images_failed) $('#note').textContent += ` · ${d.images_failed} photos failed to load`;
-    renderWall(false); es.close(); loadRecent();
+    renderWall(false); es.close();
   });
   es.addEventListener('error', e => {
     try { const d = JSON.parse(e.data); setStatus(pill(d.error_code,'bad') + ' ' + (d.message||'')); } catch(_){}
@@ -199,8 +241,10 @@ const drop = $('#drop');
 drop.ondragover = e => { e.preventDefault(); };
 drop.ondrop = e => { e.preventDefault(); $('#selfie').files = e.dataTransfer.files; $('#selfie').onchange(); };
 
-loadRecent();
-const _g = new URLSearchParams(location.search).get('g'); if (_g) open(_g);
+// ---------- routing: /g/{slug} is the shareable link; ?g= kept for old links
+const _m = location.pathname.match(/^\/g\/([a-z0-9]+)/i);
+const _q = new URLSearchParams(location.search).get('g');
+if (_m || _q) open(_m ? _m[1] : _q); else loadGalleries();
 </script>
 </body>
 </html>

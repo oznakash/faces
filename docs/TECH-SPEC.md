@@ -207,6 +207,7 @@ CREATE EXTENSION IF NOT EXISTS vector;
 CREATE TABLE galleries (
   id              uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   url_canonical   text NOT NULL UNIQUE,
+  slug            text UNIQUE,                -- short shareable key: /g/{slug}
   host            text NOT NULL,
   adapter         text NOT NULL,              -- 'smugmug' | 'jsonld' | 'html' | 'headless'
   title           text,
@@ -310,7 +311,8 @@ All app routes are Next.js route handlers; the worker is reachable only from the
 | Method | Path | Purpose |
 |---|---|---|
 | `POST` | `/api/galleries` | `{url}` → `{gallery_id, status, cached}`. Idempotent on canonical URL (T-A2/D6) |
-| `GET` | `/api/galleries/:id` | Status, counts, adapter, failure code |
+| `GET` | `/g/:slug` | **Shareable short link** — the app, opened straight to that gallery's face wall |
+| `GET` | `/api/galleries/:id` | Status, counts, adapter, failure code. Every `:id` here also accepts the short slug |
 | `GET` | `/api/galleries/:id/events` | **SSE**: `progress`, `cluster_added`, `cluster_updated`, `done`, `error` (D5) |
 | `GET` | `/api/galleries/:id/people` | Face wall: clusters with rep crop URL + image count, ordered |
 | `GET` | `/api/people/:cluster_id/photos` | Photos for a person, each with `page_url` and match score |
@@ -405,6 +407,23 @@ The pipeline tries those in order and falls back on any fetch error, so an upgra
 
 Completeness: the harvester reads the page's own reported total where one exists and asserts against it. On the candid fixture: **1,174 harvested of 1,174 reported, in 53 s.**
 
+**First full run, candid fixture (FIX-1), M1 Pro CPU, default thresholds:**
+
+| | |
+|---|---|
+| Images | 1,174 of 1,174, 0 failed — status `ready` |
+| Wall clock | ~16 min end to end (≈0.8 s/image effective; fetch overlaps inference) |
+| Detections | 10,470 faces |
+| Usable (embedded) | 2,612 — excluded: 7,585 `too_small`, 163 `blurry`, 110 `low_score` |
+| People | 210 clusters; largest 142 / 115 / 114 / 103 photos; 34 singletons |
+| Clustered | 2,386 of 2,612 usable faces (226 dropped as low-quality singletons) |
+
+Two readings. First, **72% of detections are background crowd** — faces under 40 px even at 1600 px. That is the nature of reception photography, not a bug, and it is why the exclusion is counted rather than hidden. Second, the cluster-size curve (142, 115, 114, 103, 80…) is the shape you'd expect of an event — a handful of hosts and speakers, then a long tail — which is weak but real evidence that clustering is not wildly over-merging. Whether it's over-*splitting* needs the eval set (§7); the wall is the fastest way to eyeball it.
+
 **The tuning loop.** `POST /api/galleries/{id}/recluster` re-reads `config/thresholds.yaml` and re-clusters without re-indexing, so threshold changes take seconds to evaluate, not twenty minutes. This is how `t_link` / `t_merge` / `t_hit` get calibrated once the eval set exists (§7).
 
-**Deliberately not built yet:** rate limits, denylist, cost ceiling, TTL sweeper, share links — all P3, all meaningless for a single-user local process. The privacy *architecture* is already in place: no selfie is ever written (the embedding lives only inside the search request), clusters are anonymous, and `DELETE /api/galleries/{id}` removes the index and its crops.
+**Share links** are built: each gallery gets a 6-character slug from an alphabet without 0/o/1/l (links get read aloud), served at `/g/{slug}`; every per-gallery API route accepts the slug or the uuid. Locally that link works on your machine (or your LAN with `--host 0.0.0.0`); it becomes a real shareable URL the moment the app is hosted.
+
+**Persistence.** The local profile has no expiry: `expires_at` is NULL and there is no sweeper, so an index lives until the user deletes it (production keeps its 30-day TTL per PRD D13 — that is a hosted-service concern, not a local one). Jobs are resumable: the manifest is written to `images` before any processing, each image is marked `done`/`failed` as it completes, and a job restarted for any reason processes only what is still `pending`. On startup the server resumes any job the previous process left mid-flight, and re-submitting a failed URL resumes it rather than wiping it.
+
+**Deliberately not built yet:** rate limits, denylist, cost ceiling, TTL sweeper, per-selection share links — all P3, all meaningless for a single-user local process. The privacy *architecture* is already in place: no selfie is ever written (the embedding lives only inside the search request), clusters are anonymous, and `DELETE /api/galleries/{id}` removes the index and its crops.

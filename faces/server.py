@@ -1,7 +1,11 @@
-"""FastAPI app. Tech Spec §10 — local profile serves one zero-build page."""
+"""FastAPI app. Tech Spec §10 — local profile serves one zero-build page.
+
+Every per-gallery route accepts either the uuid or the short slug (/g/{slug}).
+"""
 import json
 import logging
 import queue
+from contextlib import asynccontextmanager
 
 import cv2
 import numpy as np
@@ -16,35 +20,59 @@ from .config import CROPS, ROOT, cfg
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(message)s")
 log = logging.getLogger("faces.server")
 
-app = FastAPI(title="Faces (local)")
-db.init()
-CROPS.mkdir(parents=True, exist_ok=True)
-app.mount("/crops", StaticFiles(directory=CROPS), name="crops")
+
+@asynccontextmanager
+async def lifespan(_app):
+    db.init()
+    CROPS.mkdir(parents=True, exist_ok=True)
+    n = pipeline.resume_orphans()                   # jobs interrupted by a restart pick up where they were
+    if n:
+        log.info("resumed %d interrupted job(s)", n)
+    yield
+
+
+app = FastAPI(title="Faces (local)", lifespan=lifespan)
+app.mount("/crops", StaticFiles(directory=CROPS, check_dir=False), name="crops")
+INDEX = ROOT / "static" / "index.html"
 
 
 class SubmitBody(BaseModel):
     url: str
 
 
-def _gallery_or_404(con, gid):
-    r = con.execute("SELECT * FROM galleries WHERE id=?", (gid,)).fetchone()
+def _gallery_or_404(con, key: str) -> dict:
+    """uuid or slug -> gallery row, with short_url filled in."""
+    r = con.execute("SELECT * FROM galleries WHERE id=? OR slug=?", (key, key)).fetchone()
     if not r:
-        raise HTTPException(404, "gallery not found")
-    return dict(r)
+        raise HTTPException(404, {"error_code": "NOT_FOUND", "message": "No indexed gallery at that link."})
+    g = dict(r)
+    g["short_url"] = f"/g/{g['slug']}"
+    return g
 
 
+# ---------------------------------------------------------------- pages
 @app.get("/")
 def index():
-    return FileResponse(ROOT / "static" / "index.html")
+    return FileResponse(INDEX)
 
 
+@app.get("/g/{slug}")
+def gallery_page(slug: str):
+    """Shareable short link — same page, opened straight to this gallery's face wall."""
+    return FileResponse(INDEX)
+
+
+# ---------------------------------------------------------------- galleries
 @app.post("/api/galleries")
 def submit(body: SubmitBody):
     try:
         gid, cached = pipeline.start(body.url)
     except ValueError as e:
         raise HTTPException(400, {"error_code": str(e), "message": "That doesn't look like a URL."})
-    return {"gallery_id": gid, "cached": cached}
+    con = db.connect()
+    g = _gallery_or_404(con, gid)
+    con.close()
+    return {"gallery_id": gid, "slug": g["slug"], "short_url": g["short_url"], "cached": cached}
 
 
 @app.get("/api/galleries")
@@ -54,23 +82,25 @@ def list_galleries():
         "SELECT g.*, (SELECT COUNT(*) FROM clusters c WHERE c.gallery_id=g.id) AS people"
         " FROM galleries g ORDER BY created_at DESC").fetchall()
     con.close()
-    return [dict(r) for r in rows]
+    return [{**dict(r), "short_url": f"/g/{r['slug']}"} for r in rows]
 
 
-@app.get("/api/galleries/{gid}")
-def gallery(gid: str):
+@app.get("/api/galleries/{key}")
+def gallery(key: str):
     con = db.connect()
-    g = _gallery_or_404(con, gid)
-    g["people"] = con.execute("SELECT COUNT(*) FROM clusters WHERE gallery_id=?", (gid,)).fetchone()[0]
+    g = _gallery_or_404(con, key)
+    g["people"] = con.execute("SELECT COUNT(*) FROM clusters WHERE gallery_id=?", (g["id"],)).fetchone()[0]
     con.close()
     return g
 
 
-@app.get("/api/galleries/{gid}/events")
-def events(gid: str):
+@app.get("/api/galleries/{key}/events")
+def events(key: str):
     con = db.connect()
-    g = _gallery_or_404(con, gid)
+    g = _gallery_or_404(con, key)
+    g["people"] = con.execute("SELECT COUNT(*) FROM clusters WHERE gallery_id=?", (g["id"],)).fetchone()[0]
     con.close()
+    gid = g["id"]
     q = pipeline.subscribe(gid)
 
     def gen():
@@ -96,10 +126,10 @@ def events(gid: str):
                              headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
 
 
-@app.get("/api/galleries/{gid}/people")
-def people(gid: str):
+@app.get("/api/galleries/{key}/people")
+def people(key: str):
     con = db.connect()
-    _gallery_or_404(con, gid)
+    gid = _gallery_or_404(con, key)["id"]
     rows = con.execute(
         "SELECT c.id, c.label, c.face_count, c.image_count, c.provisional, f.crop_key"
         " FROM clusters c LEFT JOIN faces f ON f.id=c.rep_face_id"
@@ -113,7 +143,7 @@ def person_photos(cid: str):
     con = db.connect()
     c = con.execute("SELECT * FROM clusters WHERE id=?", (cid,)).fetchone()
     if not c:
-        raise HTTPException(404, "person not found")
+        raise HTTPException(404, {"error_code": "NOT_FOUND", "message": "person not found"})
     rows = con.execute(
         "SELECT i.id, i.source_url, i.page_url, i.width, i.height,"
         "       MAX(f.det_score) AS score, COUNT(f.id) AS faces_of_person, f.bbox"
@@ -123,11 +153,11 @@ def person_photos(cid: str):
     return {"person": dict(c), "photos": [dict(r) for r in rows]}
 
 
-@app.post("/api/galleries/{gid}/search")
-async def search(gid: str, selfie: UploadFile = File(...)):
+@app.post("/api/galleries/{key}/search")
+async def search(key: str, selfie: UploadFile = File(...)):
     """Selfie -> two-tier photo list. The embedding never leaves this request."""
     con = db.connect()
-    _gallery_or_404(con, gid)
+    gid = _gallery_or_404(con, key)["id"]
     data = await selfie.read()
     if len(data) > 10 * 1024 * 1024:
         raise HTTPException(413, {"error_code": "TOO_LARGE", "message": "Max 10 MB."})
@@ -142,13 +172,14 @@ async def search(gid: str, selfie: UploadFile = File(...)):
     q = found[0]["embedding"]                           # largest face (T-C3 default)
     ids, mat = db.load_embeddings(con, gid)
     if not ids:
+        con.close()
         return {"confident": [], "possible": [], "faces_in_selfie": len(found)}
     sims = mat @ (q / (np.linalg.norm(q) + 1e-9))
     meta = {r["id"]: dict(r) for r in con.execute(
         "SELECT f.id, f.image_id, f.bbox, i.source_url, i.page_url FROM faces f"
         " JOIN images i ON i.id=f.image_id WHERE f.gallery_id=? AND f.embedding IS NOT NULL", (gid,))}
     con.close()
-    best: dict[str, dict] = {}                         # per image, best-matching face
+    best: dict[str, dict] = {}                         # per image, its best-matching face
     for fid, s in zip(ids, sims):
         s = float(s)
         if s < cfg.search.t_possible:
@@ -166,23 +197,24 @@ async def search(gid: str, selfie: UploadFile = File(...)):
     }
 
 
-@app.post("/api/galleries/{gid}/recluster")
-def recluster(gid: str):
+@app.post("/api/galleries/{key}/recluster")
+def recluster(key: str):
     """Re-run clustering with the current thresholds.yaml — the tuning loop."""
     from . import config
     config.cfg = config.load()
     cluster.cfg = config.cfg
     con = db.connect()
-    _gallery_or_404(con, gid)
+    gid = _gallery_or_404(con, key)["id"]
     n = cluster.recluster(con, gid, provisional=False)
     con.close()
     return {"people": n}
 
 
-@app.delete("/api/galleries/{gid}")
-def delete(gid: str):
+@app.delete("/api/galleries/{key}")
+def delete(key: str):
+    """The only way an index is ever removed: an explicit request."""
     con = db.connect()
-    _gallery_or_404(con, gid)
+    gid = _gallery_or_404(con, key)["id"]
     con.close()
     pipeline.delete(gid)
     return {"deleted": gid}
