@@ -1,0 +1,27 @@
+# Every number that decides accuracy lives here, not in the code.
+# Tech Spec §6: "thresholds are configuration, not constants."
+detection:
+  det_thresh: 0.5          # SCRFD detection confidence floor
+  det_size: 1024           # longest edge fed to the detector
+
+quality:                    # Tech Spec §4 step 5 — rejected faces are counted, never silently dropped
+  min_bbox_px: 40           # short edge of the face box
+  min_det_score: 0.60
+  min_blur_var: 12.0        # Laplacian variance on the aligned crop
+
+clustering:                 # Tech Spec §5
+  knn: 30
+  t_link: 0.55              # edge kept if cosine >= this
+  t_merge: 0.45             # two components may merge only if centroids >= this
+  singleton_min_det_score: 0.75
+  singleton_min_bbox_px: 80
+
+search:                     # Tech Spec §6 — two-tier results
+  t_hit: 0.62               # "confident" tray
+  t_possible: 0.50          # "possible" tray; below this is discarded, never shown
+
+limits:
+  max_images: 5000
+  max_image_bytes: 26214400
+  fetch_concurrency: 6
+  cluster_every_n_faces: 250
