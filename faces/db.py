@@ -39,6 +39,7 @@ CREATE TABLE IF NOT EXISTS images (
   gallery_id     TEXT NOT NULL REFERENCES galleries(id) ON DELETE CASCADE,
   source_url     TEXT NOT NULL,
   page_url       TEXT,
+  fallback_url   TEXT,
   content_sha256 TEXT,
   width          INTEGER,
   height         INTEGER,

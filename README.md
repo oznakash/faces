@@ -4,7 +4,7 @@
 
 Photo galleries are published as a flat wall of images. A conference, a wedding, a marathon, a school year — any of them routinely produces **one to several thousand photos in a single gallery**. If you're in there, today you have exactly one tool: scroll all of them and squint. Faces replaces that with a people index.
 
-> Status: **pre-build.** Docs first, code next. Nothing here runs yet.
+> Status: **runs locally.** One Python process, no Docker, no node. Not hosted yet.
 
 ---
 
@@ -21,7 +21,7 @@ Every result links back to the original photo on the source gallery. Faces is a 
 - **It does not name anyone.** Clusters are anonymous — "Person 7", never an identity. No name lookup, no social matching, no celebrity recognition.
 - **It does not keep a face database.** Indexes are per-gallery and expire (default 30 days). There is no schema in which cross-gallery identities could accumulate.
 - **It does not keep your selfie.** The upload and its embedding live in memory with a 30-minute TTL and are never written to disk.
-- **It does not crawl what it shouldn't.** Ingestion is API-first and `robots.txt`-respecting: where a platform offers a sanctioned API, we use it instead of scraping.
+- **It does not crawl.** Ingestion behaves like your browser: it opens the one page you pasted, scrolls it, and reads the images it shows. No site-wide crawling, no APIs, no keys — which is also why it works on any page you can open.
 
 These are architectural choices, not policy promises — see [Tech Spec §11](docs/TECH-SPEC.md#11-privacy-security-and-compliance).
 
@@ -39,6 +39,18 @@ Next.js app for the UI, Python worker for the models, Postgres + pgvector for th
 
 The part that actually decides whether this works is the **adapter layer** — turning an arbitrary gallery URL into a *complete* image manifest across platforms. Recognition is a commodity; reliable ingestion is not.
 
+## Quickstart (local)
+
+Requires Python 3.12+. First run downloads the face models (~280 MB) and a headless Chromium.
+
+```bash
+./run.sh
+```
+
+Then open <http://localhost:8000>, paste a gallery URL, and watch the wall fill in. Everything — the index, face crops, and thresholds — lives under `./data/` and `config/thresholds.yaml`. Delete `data/` to start clean.
+
+On an M1 Pro, expect ~1.2 s per image on CPU; a 1,000-image gallery is roughly 20 minutes. Faces stream in as they're found, so the wall is usable long before the run finishes.
+
 ## Documentation
 
 | Doc | What's in it |
@@ -53,7 +65,7 @@ Faces is built against a **set** of galleries chosen for different shapes — ca
 
 ## Status and next step
 
-Pre-build. The next deliverable is **P0**: the first platform adapter, the detect→embed→store path over 200 images, and — most importantly — the **labeled evaluation set**, which every later accuracy decision is judged against. See [Tech Spec §14](docs/TECH-SPEC.md#14-build-order).
+Runs locally (see Quickstart). The next deliverable is **P0**: the detect→embed→store path proven on a full real gallery, and — most importantly — the **labeled evaluation set**, which every later accuracy decision is judged against. See [Tech Spec §14](docs/TECH-SPEC.md#14-build-order).
 
 ## License
 

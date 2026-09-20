@@ -1,0 +1,206 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Faces</title>
+<style>
+  :root{--bg:#fafafa;--fg:#111;--muted:#6b6b6b;--line:#e6e6e6;--card:#fff;--accent:#0a84ff;--ok:#1a8f4a;--warn:#b8860b;--bad:#c0392b}
+  @media (prefers-color-scheme:dark){:root{--bg:#0f0f10;--fg:#f2f2f2;--muted:#9a9a9a;--line:#262628;--card:#171719;--accent:#3a9bff}}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.5 -apple-system,BlinkMacSystemFont,"SF Pro Text",Inter,system-ui,sans-serif;-webkit-font-smoothing:antialiased}
+  header{padding:40px 24px 8px;max-width:1200px;margin:0 auto}
+  h1{font-size:34px;letter-spacing:-.02em;margin:0 0 4px;font-weight:700}
+  .sub{color:var(--muted);margin:0 0 24px}
+  main{max-width:1200px;margin:0 auto;padding:0 24px 80px}
+  form{display:flex;gap:10px;flex-wrap:wrap}
+  input[type=url]{flex:1;min-width:260px;font:inherit;padding:12px 14px;border:1px solid var(--line);border-radius:12px;background:var(--card);color:var(--fg)}
+  input[type=url]:focus{outline:2px solid var(--accent);outline-offset:0;border-color:transparent}
+  button{font:inherit;font-weight:600;padding:12px 18px;border:0;border-radius:12px;background:var(--accent);color:#fff;cursor:pointer}
+  button.ghost{background:transparent;color:var(--accent);padding:8px 10px}
+  button:disabled{opacity:.5;cursor:default}
+  .status{margin:18px 0 8px;display:flex;gap:14px;align-items:center;flex-wrap:wrap;color:var(--muted);min-height:24px}
+  .bar{height:6px;background:var(--line);border-radius:6px;overflow:hidden;flex:1;min-width:160px}
+  .bar i{display:block;height:100%;width:0;background:var(--accent);transition:width .3s}
+  .pill{font-size:12px;padding:3px 9px;border-radius:999px;background:var(--line);color:var(--fg)}
+  .pill.ok{background:color-mix(in srgb,var(--ok) 15%,transparent);color:var(--ok)}
+  .pill.warn{background:color-mix(in srgb,var(--warn) 15%,transparent);color:var(--warn)}
+  .pill.bad{background:color-mix(in srgb,var(--bad) 15%,transparent);color:var(--bad)}
+  .note{font-size:13px;color:var(--muted);margin:0 0 16px}
+  h2{font-size:18px;margin:28px 0 12px;display:flex;align-items:baseline;gap:10px}
+  h2 small{color:var(--muted);font-weight:400;font-size:14px}
+  .wall{display:grid;grid-template-columns:repeat(auto-fill,minmax(112px,1fr));gap:12px}
+  .face{background:var(--card);border:1px solid var(--line);border-radius:14px;overflow:hidden;cursor:pointer;transition:transform .12s,box-shadow .12s;text-align:center}
+  .face:hover{transform:translateY(-2px);box-shadow:0 8px 24px rgba(0,0,0,.08)}
+  .face.active{outline:2px solid var(--accent)}
+  .face img{width:100%;aspect-ratio:1;object-fit:cover;display:block;background:var(--line)}
+  .face .n{font-size:12px;color:var(--muted);padding:6px 4px}
+  .face .n b{color:var(--fg);font-weight:600}
+  .photos{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:12px}
+  .ph{position:relative;background:var(--card);border:1px solid var(--line);border-radius:12px;overflow:hidden}
+  .ph img{width:100%;aspect-ratio:4/3;object-fit:cover;display:block;background:var(--line)}
+  .ph a{position:absolute;inset:0}
+  .ph .s{position:absolute;right:8px;bottom:8px;font-size:11px;background:rgba(0,0,0,.55);color:#fff;padding:2px 7px;border-radius:999px}
+  .empty{color:var(--muted);padding:40px 0;text-align:center}
+  .row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+  .drop{border:1.5px dashed var(--line);border-radius:12px;padding:14px;color:var(--muted);display:flex;gap:12px;align-items:center;cursor:pointer;background:var(--card)}
+  .drop img{width:56px;height:56px;border-radius:10px;object-fit:cover}
+  .hidden{display:none}
+  .recent{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}
+  .recent button{font-size:12px;padding:6px 10px;background:var(--line);color:var(--fg);border-radius:999px;font-weight:500;max-width:360px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .privacy{font-size:12px;color:var(--muted);margin-top:8px}
+</style>
+</head>
+<body>
+<header>
+  <h1>Faces</h1>
+  <p class="sub">Point it at a public photo gallery. See everyone who's in it. Find every photo you're in.</p>
+</header>
+<main>
+  <form id="f">
+    <input id="url" type="url" required placeholder="https://… a gallery page" autocomplete="off">
+    <button id="go" type="submit">Index gallery</button>
+  </form>
+  <div class="recent" id="recent"></div>
+
+  <div class="status" id="status"></div>
+  <p class="note" id="note"></p>
+
+  <section id="search" class="hidden">
+    <h2>Find me <small>upload a selfie — it's processed in memory and never stored</small></h2>
+    <label class="drop" id="drop">
+      <input id="selfie" type="file" accept="image/*" class="hidden">
+      <img id="selfiePreview" class="hidden" alt="">
+      <span id="dropText">Drop a selfie here, or click to choose</span>
+    </label>
+    <div id="results"></div>
+  </section>
+
+  <section id="wallSec" class="hidden">
+    <h2>People <small id="wallCount"></small></h2>
+    <div class="wall" id="wall"></div>
+  </section>
+
+  <section id="personSec" class="hidden">
+    <h2><span id="personTitle"></span> <small id="personCount"></small> <button class="ghost" id="closePerson">close</button></h2>
+    <div class="photos" id="photos"></div>
+  </section>
+</main>
+<script>
+const $ = s => document.querySelector(s);
+let gid = null, es = null;
+
+// ---------- helpers
+const fmt = n => (n ?? 0).toLocaleString();
+function pill(text, cls){ return `<span class="pill ${cls||''}">${text}</span>`; }
+function setStatus(html){ $('#status').innerHTML = html; }
+
+// ---------- recent galleries
+async function loadRecent(){
+  const r = await fetch('/api/galleries'); const list = await r.json();
+  $('#recent').innerHTML = list.slice(0,8).map(g =>
+    `<button data-id="${g.id}" title="${g.url_canonical}">${g.title || g.url_canonical.replace(/^https?:\/\//,'')} · ${fmt(g.people)} people</button>`).join('');
+  $('#recent').querySelectorAll('button').forEach(b => b.onclick = () => open(b.dataset.id));
+}
+
+// ---------- submit
+$('#f').onsubmit = async e => {
+  e.preventDefault();
+  $('#go').disabled = true;
+  const r = await fetch('/api/galleries', {method:'POST', headers:{'content-type':'application/json'},
+    body: JSON.stringify({url: $('#url').value})});
+  $('#go').disabled = false;
+  if (!r.ok){ const err = await r.json(); setStatus(pill(err.detail?.message || 'Error','bad')); return; }
+  const {gallery_id} = await r.json();
+  open(gallery_id);
+};
+
+// ---------- open a gallery: stream progress, then render
+function open(id){
+  gid = id;
+  history.replaceState(null, '', `?g=${id}`);
+  if (es) es.close();
+  $('#wall').innerHTML = ''; $('#wallSec').classList.add('hidden');
+  $('#personSec').classList.add('hidden'); $('#search').classList.add('hidden');
+  $('#results').innerHTML = ''; $('#note').textContent = '';
+  es = new EventSource(`/api/galleries/${id}/events`);
+  es.addEventListener('status', e => {
+    const g = JSON.parse(e.data);
+    if (g.url_canonical) $('#url').value = g.url_canonical;
+    if (g.status === 'ingesting') setStatus(`${pill('opening gallery')} <span>scrolling the page to find every photo…</span>`);
+    if (g.notes) $('#note').textContent = g.notes.join(' · ');
+    if (g.message && !g.notes) $('#note').textContent = g.message;
+  });
+  es.addEventListener('progress', e => {
+    const p = JSON.parse(e.data);
+    if (p.phase === 'harvest'){ setStatus(`${pill('finding photos')} <span>${fmt(p.images_total)} found so far</span>`); return; }
+    const pct = p.images_total ? Math.round(100*(p.images_done+p.images_failed)/p.images_total) : 0;
+    setStatus(`${pill('indexing')} <div class="bar"><i style="width:${pct}%"></i></div>
+      <span>${fmt(p.images_done)} / ${fmt(p.images_total)} photos · ${fmt(p.faces_found)} faces · ${p.elapsed}s</span>`);
+  });
+  es.addEventListener('clusters', e => { renderWall(JSON.parse(e.data).provisional); });
+  es.addEventListener('done', e => {
+    const d = JSON.parse(e.data);
+    const st = d.status === 'ready' ? pill('ready','ok') : d.status === 'partial' ? pill('partial','warn') : pill(d.status,'bad');
+    setStatus(`${st} <span>${fmt(d.images_done)} photos · ${fmt(d.faces_found)} faces (${fmt(d.faces_excluded)} excluded for quality) · ${fmt(d.people)} people${d.elapsed?` · ${d.elapsed}s`:''}</span>`);
+    if (d.images_failed) $('#note').textContent += ` · ${d.images_failed} photos failed to load`;
+    renderWall(false); es.close(); loadRecent();
+  });
+  es.addEventListener('error', e => {
+    try { const d = JSON.parse(e.data); setStatus(pill(d.error_code,'bad') + ' ' + (d.message||'')); } catch(_){}
+  });
+}
+
+// ---------- face wall
+async function renderWall(provisional){
+  const r = await fetch(`/api/galleries/${gid}/people`); const people = await r.json();
+  $('#wallSec').classList.remove('hidden'); $('#search').classList.remove('hidden');
+  $('#wallCount').textContent = `${fmt(people.length)}${provisional ? ' so far' : ''} · sorted by photo count`;
+  $('#wall').innerHTML = people.length ? people.map(p =>
+    `<div class="face" data-id="${p.id}" title="${p.label}">
+       <img src="${p.crop_url}" alt="${p.label}" loading="lazy">
+       <div class="n"><b>${fmt(p.image_count)}</b> photo${p.image_count===1?'':'s'}</div></div>`).join('')
+    : `<div class="empty">No faces found yet.</div>`;
+  $('#wall').querySelectorAll('.face').forEach(el => el.onclick = () => showPerson(el.dataset.id, el));
+}
+
+async function showPerson(cid, el){
+  document.querySelectorAll('.face.active').forEach(x => x.classList.remove('active'));
+  el?.classList.add('active');
+  const r = await fetch(`/api/people/${cid}/photos`); const d = await r.json();
+  $('#personSec').classList.remove('hidden');
+  $('#personTitle').textContent = d.person.label;
+  $('#personCount').textContent = `${fmt(d.photos.length)} photos · click any to open the original`;
+  $('#photos').innerHTML = d.photos.map(ph => photoCard(ph)).join('');
+  $('#personSec').scrollIntoView({behavior:'smooth', block:'start'});
+}
+function photoCard(ph, score){
+  return `<div class="ph"><img src="${ph.source_url}" loading="lazy" alt="">
+    <a href="${ph.page_url || ph.source_url}" target="_blank" rel="noopener" title="open original"></a>
+    ${score!=null?`<span class="s">${Math.round(score*100)}%</span>`:''}</div>`;
+}
+$('#closePerson').onclick = () => $('#personSec').classList.add('hidden');
+
+// ---------- selfie search
+$('#selfie').onchange = async () => {
+  const file = $('#selfie').files[0]; if (!file) return;
+  $('#selfiePreview').src = URL.createObjectURL(file); $('#selfiePreview').classList.remove('hidden');
+  $('#dropText').textContent = 'Searching…';
+  const fd = new FormData(); fd.append('selfie', file);
+  const r = await fetch(`/api/galleries/${gid}/search`, {method:'POST', body: fd});
+  const d = await r.json();
+  if (!r.ok){ $('#dropText').textContent = d.detail?.message || 'Search failed'; return; }
+  $('#dropText').textContent = `${d.confident.length} confident · ${d.possible.length} possible${d.faces_in_selfie>1?` · using the largest of ${d.faces_in_selfie} faces`:''}`;
+  $('#results').innerHTML =
+    (d.confident.length ? `<h2>Confident matches <small>${d.confident.length}</small></h2><div class="photos">${d.confident.map(p=>photoCard(p,p.score)).join('')}</div>` : `<div class="empty">No confident matches in this gallery.</div>`) +
+    (d.possible.length ? `<h2>Possible matches <small>${d.possible.length} · lower confidence, shown separately on purpose</small></h2><div class="photos">${d.possible.map(p=>photoCard(p,p.score)).join('')}</div>` : '');
+};
+const drop = $('#drop');
+drop.ondragover = e => { e.preventDefault(); };
+drop.ondrop = e => { e.preventDefault(); $('#selfie').files = e.dataTransfer.files; $('#selfie').onchange(); };
+
+loadRecent();
+const _g = new URLSearchParams(location.search).get('g'); if (_g) open(_g);
+</script>
+</body>
+</html>

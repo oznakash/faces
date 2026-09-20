@@ -79,7 +79,7 @@ Not a moat play — a **wedge**. The differentiated asset is the *gallery adapte
 
 | In | Out (v1.5+) |
 |---|---|
-| SmugMug adapter + generic HTML adapter | Zenfolio, Pixieset, Flickr, Google Photos share links |
+| Generic ingestion: any public page a browser can open (JS-rendered or static) | Login-gated galleries; Google Photos / iCloud share links with their own app shells |
 | Face wall + selfie search | Naming / labeling clusters, saved people |
 | Single-gallery indexes with TTL | Cross-gallery search, persistent user library |
 | Download / share selected photos | Bulk ZIP export, email delivery |
@@ -91,7 +91,7 @@ Not a moat play — a **wedge**. The differentiated asset is the *gallery adapte
 
 ### Approach in one paragraph
 
-A URL goes to an **adapter** that resolves it to a complete image manifest — for SmugMug that means extracting the album key from the page and paginating the sanctioned `/api/v2` endpoint rather than scraping (the site's `robots.txt` disallows generic crawling but explicitly allows `/api/v2`). Images are fetched at display resolution, deduplicated by content hash, and run through a two-stage model: **SCRFD** for detection and **ArcFace** for a 512-dimension embedding per face. Embeddings go into Postgres with `pgvector`. Faces are grouped into people by graph clustering over cosine similarity. Selfie search is a single ANN lookup against that same index. Results stream to the browser over SSE as the job progresses. Full design in the [Technical Spec](./TECH-SPEC.md).
+A URL goes to a **generic ingestion adapter** that behaves like a browser: it opens the one page the user pasted, scrolls it to the bottom, and reads the images the page displays — no platform APIs, no keys, so it works on any page a person can open. Grids lazy-load thumbnails far too small for recognition, so each harvested image is *upgraded* to a larger variant (a URL-rewrite rule where the host's pattern is known, else the photo page's `og:image`). Where the page reports its own image count, ingestion verifies completeness against it; where it can't, the UI says so. Images are fetched at display resolution, deduplicated by content hash, and run through a two-stage model: **SCRFD** for detection and **ArcFace** for a 512-dimension embedding per face. Embeddings go into Postgres with `pgvector`. Faces are grouped into people by graph clustering over cosine similarity. Selfie search is a single ANN lookup against that same index. Results stream to the browser over SSE as the job progresses. Full design in the [Technical Spec](./TECH-SPEC.md).
 
 ### Delivery plan
 
@@ -108,7 +108,7 @@ A URL goes to an **adapter** that resolves it to a complete image manifest — f
 |---|---|---|---|
 | Recognition engine | Self-hosted InsightFace (SCRFD + ArcFace) | AWS Rekognition Collections | ~35× cheaper at volume, no per-image vendor lock, embeddings stay ours; Rekognition kept as a documented fallback |
 | Clustering | Graph / connected-components over cosine threshold + centroid merge | k-means, HDBSCAN | Number of people is unknown a priori; graph approach is incremental and explainable |
-| Ingestion | Per-platform adapters, API-first | Universal headless-browser scraper | Correctness, completeness, and robots compliance; headless browser is the fallback, not the default |
+| Ingestion | Generic headless browser, behaves as a user's browser would | Per-platform API adapters | The product must work on *any* page; API keys and per-platform code don't generalize, and a gallery you can open in a browser is a gallery Faces should read. Platform-specific knowledge is limited to URL-rewrite rules for larger image variants |
 | Identity | Anonymous clusters only | Name enrichment | Legal exposure (BIPA/GDPR Art. 9) is disproportionate to v1 value |
 | Storage of selfies | In-memory, TTL 30 min, never written to disk | Persist for "improved results" | Trust is the product's fragile asset |
 
@@ -191,7 +191,7 @@ v1 ships when **every** item below is true. These are binary, not aspirational.
 - [ ] **D13** Gallery indexes expire automatically (default 30 days) and there is a working one-click delete.
 - [ ] **D14** A privacy notice explains, in plain language, what is processed, where it goes, and how long it lives — shown before the first upload, not buried.
 - [ ] **D15** A takedown path exists for gallery owners and for individuals, with a documented SLA.
-- [ ] **D16** Ingestion respects `robots.txt` and platform ToS; the SmugMug path uses the sanctioned `/api/v2` interface.
+- [ ] **D16** Ingestion is user-directed and page-scoped: it loads only the page the user pasted (plus the images it displays and, when needed, each photo's own page), never crawls a site, never bypasses a bot challenge or login, and never mirrors source images. This posture is documented and honest about the trade-off it makes (Tech Spec §3.3).
 - [ ] **D17** Rate limiting and an abuse policy are live: per-IP and per-domain caps, and a denylist for domains we will not index.
 
 ### Operational
@@ -253,7 +253,7 @@ The fixture set exists to stop us from building a tool that works on exactly one
 |---|---|---|---|
 | **FIX-1** | Candid event gallery — [IIA AI Summit, Opening Reception](https://www.johnwernerphotography.com/IIA-AI-Summit-Silicon-Valley-Sept-13-15-2026/Opening-Reception) (SmugMug, ~1,170 images) | Crowded frames, mixed and low light, motion, many faces per photo, lots of profiles | The hard case. Detection recall and cluster fragmentation are decided here |
 | **FIX-2** | Portrait gallery — [IIA AI Summit, All the portraits](https://www.johnwernerphotography.com/IIA-AI-Summit-Silicon-Valley-Sept-13-15-2026/All-the-portraits) (SmugMug, ~1,830 images) | Posed, frontal, even lighting, one or two subjects per frame | The easy case, and therefore the clean signal: a precision failure here is unambiguous. Also the largest fixture — the scale test |
-| **FIX-3** | A non-SmugMug gallery — generic HTML or JSON-LD source *(to be selected in P0)* | Unknown total, lazy loading, no sanctioned API | Proves the adapter layer is not SmugMug-shaped. **Blocks P1 exit** |
+| **FIX-3** | A gallery on a different platform — Zenfolio, Pixieset, Flickr, or a plain HTML page *(to be selected in P0)* | Unknown total, different lazy-loading, no URL-rewrite rule (exercises the `og:image` upgrade) | Proves ingestion is generic, not SmugMug-shaped. **Blocks P1 exit** |
 | **FIX-4** | A small non-gallery page (e.g. an article with 3 photos) | Boundary | Proves graceful behavior outside the happy path |
 
 FIX-1 and FIX-2 are the same event, which makes them a useful pair: the same people appear in both, under very different conditions, so a person's embedding quality can be compared across shapes.
@@ -270,9 +270,9 @@ FIX-1 and FIX-2 are the same event, which makes them a useful pair: the same peo
 | T-A6 | Submit a malformed URL / non-existent domain | Validation error in < 2s, no job created |
 | T-A7 | Source host returns 429/503 mid-crawl | Exponential backoff, job resumes, no duplicate work, no image lost |
 | T-A8 | Gallery contains the same photo twice at different URLs | Deduplicated by content hash; counted once |
-| T-A9 | Domain whose `robots.txt` disallows our path and offers no sanctioned API | Refused with an explanation; logged; not retried |
+| T-A9 | Page that presents a bot challenge, CAPTCHA, or login wall | Refused with a specific reason; never attempts to bypass; logged; not retried |
 | T-A10 | Job exceeds the per-job cost ceiling | Aborted cleanly; partial results retained and labeled partial |
-| T-A11 | Submit FIX-3 (non-SmugMug, no sanctioned API, unknown total) | Indexed via the structured-data or HTML adapter; UI states that completeness is unverified rather than implying a full count |
+| T-A11 | Submit FIX-3 (non-SmugMug, no rewrite rule, unknown total) | Indexed generically; images upgraded via `og:image` where available; UI states that completeness is unverified rather than implying a full count |
 
 ### B. Detection & clustering
 

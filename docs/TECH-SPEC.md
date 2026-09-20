@@ -379,3 +379,32 @@ Face embeddings are **biometric identifiers**. Under GDPR Art. 9 they are specia
 | **P3** | Download/share, rate limits, privacy notice, takedown path, denylist, cost ceiling, second platform adapter | D7, D13–D20 pass; legal Q1/Q2 resolved |
 
 **P0 is not a throwaway spike.** It carries the eval set, which is the artifact every later decision is judged against — build it first or tune blind. And the fixture set is not decoration: a system tuned against a single gallery is a demo, not a product, so a non-SmugMug fixture gates P1's exit.
+
+---
+
+## 15. Local profile (what runs today)
+
+The production shape in §1–§2 is the target. What exists now is a **single-process local build** that keeps the same pipeline, thresholds, and table shapes while stripping every piece of infrastructure that only matters at scale. The point is to prove accuracy and ingestion on real galleries before spending anything on hosting.
+
+| Concern | Production (§2) | Local profile | Why it's fine locally |
+|---|---|---|---|
+| Vector search | Postgres + pgvector HNSW | **SQLite + numpy** — embeddings as float32 BLOBs, cosine as a matrix multiply | A few thousand vectors is ~8 MB; a full scan is ~1 ms. HNSW buys nothing below ~1M vectors |
+| Queue | Redis + RQ | A background thread per gallery, job state in the `galleries` row | One user, one machine |
+| Progress | SSE from a Next.js route | SSE from FastAPI, in-process pub/sub | Same wire format; the UI won't change |
+| Frontend | Next.js on Vercel | **One zero-build HTML page** served by FastAPI | No node, no bundler, no build step |
+| Crops | R2 object store | `./data/crops/` | Served as static files |
+| Inference | GPU worker | ONNX Runtime on CPU (M1 Pro: ~1.25 s/image at `det_size=1024`; CoreML EP measured no faster) | Overlaps with fetching; wall fills as it runs |
+
+**Ingestion, as built.** Playwright loads the page, scrolls until the height stops growing, and harvests every `<img>` (largest `srcset` candidate wins) plus the tile's link. Size variants of the same photo are collapsed, keeping the largest. Then each URL is **upgraded**, because grids lazy-load thumbnails that are useless for recognition — on the candid fixture the grid serves 417 `S` and 757 `M` (600 px) tiles, and a 600 px crowd shot yields 20 detections and **zero** usable faces. Upgrade order:
+
+1. A host-specific **URL-rewrite rule** (SmugMug: size letter → `X3`, 1600 px; the path hash is not size-bound — verified).
+2. Else the linked photo page's **`og:image`** (generic; on SmugMug it advertises a 1024 px `XL`).
+3. Else the harvested thumbnail.
+
+The pipeline tries those in order and falls back on any fetch error, so an upgrade rule that breaks degrades to the thumbnail rather than to a failed image. At 1600 px the same crowd shot yields 6 usable faces of 20 detected — the rest are genuinely too small, and are counted as `too_small` rather than dropped.
+
+Completeness: the harvester reads the page's own reported total where one exists and asserts against it. On the candid fixture: **1,174 harvested of 1,174 reported, in 53 s.**
+
+**The tuning loop.** `POST /api/galleries/{id}/recluster` re-reads `config/thresholds.yaml` and re-clusters without re-indexing, so threshold changes take seconds to evaluate, not twenty minutes. This is how `t_link` / `t_merge` / `t_hit` get calibrated once the eval set exists (§7).
+
+**Deliberately not built yet:** rate limits, denylist, cost ceiling, TTL sweeper, share links — all P3, all meaningless for a single-user local process. The privacy *architecture* is already in place: no selfie is ever written (the embedding lives only inside the search request), clusters are anonymous, and `DELETE /api/galleries/{id}` removes the index and its crops.

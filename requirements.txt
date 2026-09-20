@@ -1,0 +1,11 @@
+numpy
+pillow
+opencv-python-headless
+onnxruntime
+insightface
+fastapi
+uvicorn[standard]
+httpx
+playwright
+python-multipart
+pyyaml

@@ -36,7 +36,7 @@ The durable asset isn't the recognition — that's a commodity. It's the **galle
 
 ## What we will not build
 
-No names. No cross-gallery face database. No stored selfies. No scraping what `robots.txt` forbids. These are enforced structurally — **there is no schema in which identities could accumulate** — not promised in a policy page. It's the right call ethically, it's the right call legally (GDPR Art. 9, Illinois BIPA, Texas CUBI), and it's the only version of this product that deserves to be trusted.
+No names. No cross-gallery face database. No stored selfies. No crawling — Faces reads the one page you gave it, the way your browser would, and nothing beyond it. These are enforced structurally — **there is no schema in which identities could accumulate** — not promised in a policy page. It's the right call ethically, it's the right call legally (GDPR Art. 9, Illinois BIPA, Texas CUBI), and it's the only version of this product that deserves to be trusted.
 
 ## Done vs. good
 
@@ -70,7 +70,7 @@ Next.js app (UI, SSE progress) + Python worker (InsightFace on ONNXRuntime) + Po
 
 | Phase | Weeks | Deliverable |
 |---|---|---|
-| **P0** | 1 | First platform adapter, detect→embed→store on 200 images, **labeled eval set + harness** |
+| **P0** | 1 | Generic headless ingestion, detect→embed→store on 200 images, **labeled eval set + harness** |
 | **P1** | 2–3 | Clustering, face wall, streaming progress, full runs across **every fixture** — including a non-SmugMug gallery |
 | **P2** | 4 | Selfie search, two-tier results, TTL enforcement |
 | **P3** | 5–6 | Share/download, rate limits, privacy notice, takedown path |
@@ -85,7 +85,7 @@ Next.js app (UI, SSE progress) + Python worker (InsightFace on ONNXRuntime) + Po
 | **Over-split clusters** make the face wall noisy — the most likely silent quality failure | Centroid consolidation pass; fragmentation is an explicit eval gate (≤ 2.0 clusters/person) |
 | **Biometric-privacy exposure** (BIPA/CUBI) | Anonymous clusters, TTLs, no persistence — plus counsel before public launch |
 | **Misuse for stalking** | No naming, no cross-gallery search, rate limits, denylist, takedown path |
-| **A platform's sanctioned API needs credentials we can't get** — that loses a whole category of galleries, not one | Secure each adapter's access path before it ships; never depend on a single platform; headless fallback only with an explicit robots decision |
+| **A gallery platform blocks automated browsers** (bot challenge, CAPTCHA) — that loses every gallery on it, not one | Behave exactly like a user's browser: one page, no crawling; refuse honestly rather than bypass; keep the UI truthful about what couldn't be read |
 
 ## Three decisions needed before P3
 
@@ -95,4 +95,4 @@ Next.js app (UI, SSE progress) + Python worker (InsightFace on ONNXRuntime) + Po
 
 ## Next step
 
-Start **P0**: secure the first adapter's API access, select the non-SmugMug fixture, and build the labeled eval set before anything else. Fixture galleries are listed in [PRD §7](./PRD.md#fixtures).
+Start **P0**: generic ingestion, select the non-SmugMug fixture, and build the labeled eval set before anything else. Fixture galleries are listed in [PRD §7](./PRD.md#fixtures).
