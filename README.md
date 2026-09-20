@@ -1,8 +1,8 @@
 # Faces
 
-**Point it at a public photo gallery. See everyone who's in it. Find every photo you're in.**
+**Point it at any public photo gallery. See everyone who's in it. Find every photo you're in.**
 
-Event photography is published as a flat wall of images — the gallery this project is being built against holds **1,174 photos from a single reception**. If you attended, there is exactly one way to find yourself today: scroll all 1,174 and squint. Faces replaces that with a people index.
+Photo galleries are published as a flat wall of images. A conference, a wedding, a marathon, a school year — any of them routinely produces **one to several thousand photos in a single gallery**. If you're in there, today you have exactly one tool: scroll all of them and squint. Faces replaces that with a people index.
 
 > Status: **pre-build.** Docs first, code next. Nothing here runs yet.
 
@@ -21,7 +21,7 @@ Every result links back to the original photo on the source gallery. Faces is a 
 - **It does not name anyone.** Clusters are anonymous — "Person 7", never an identity. No name lookup, no social matching, no celebrity recognition.
 - **It does not keep a face database.** Indexes are per-gallery and expire (default 30 days). There is no schema in which cross-gallery identities could accumulate.
 - **It does not keep your selfie.** The upload and its embedding live in memory with a 30-minute TTL and are never written to disk.
-- **It does not crawl what it shouldn't.** Ingestion is API-first and `robots.txt`-respecting. For the reference gallery that means SmugMug's sanctioned `/api/v2`, not scraping.
+- **It does not crawl what it shouldn't.** Ingestion is API-first and `robots.txt`-respecting: where a platform offers a sanctioned API, we use it instead of scraping.
 
 These are architectural choices, not policy promises — see [Tech Spec §11](docs/TECH-SPEC.md#11-privacy-security-and-compliance).
 
@@ -35,23 +35,25 @@ URL ──▶ adapter ──▶ image manifest ──▶ fetch + dedupe ──�
    selfie ──▶ embed ──▶ ANN search (pgvector HNSW) ──▶ ranked photos
 ```
 
-Next.js app for the UI, Python worker for the models, Postgres + pgvector for the index. Roughly **2.5 minutes and ~3 cents** to index the 1,174-photo reference gallery on a small GPU.
+Next.js app for the UI, Python worker for the models, Postgres + pgvector for the index. Roughly **2 minutes and ~3 cents per 1,000 images** on a small GPU.
+
+The part that actually decides whether this works is the **adapter layer** — turning an arbitrary gallery URL into a *complete* image manifest across platforms. Recognition is a commodity; reliable ingestion is not.
 
 ## Documentation
 
 | Doc | What's in it |
 |---|---|
 | [**Executive Summary**](docs/EXEC-SUMMARY.md) | The whole project in two minutes — start here |
-| [**PRD**](docs/PRD.md) | Why, what, how · 4 jobs-to-be-done · definition of done · definition of good · 43 test cases |
+| [**PRD**](docs/PRD.md) | Why, what, how · 4 jobs-to-be-done · definition of done · definition of good · 45 test cases |
 | [**Technical Spec**](docs/TECH-SPEC.md) | Architecture, adapters, pipeline, clustering, data model, evaluation, cost, privacy, risks |
 
-## Reference gallery
+## Test fixtures
 
-Built and measured against [IIA AI Summit Silicon Valley — Opening Reception](https://www.johnwernerphotography.com/IIA-AI-Summit-Silicon-Valley-Sept-13-15-2026/Opening-Reception) — SmugMug, album `B2cCGn`, 1,174 images. Every performance number in these docs refers to that workload.
+Faces is built against a **set** of galleries chosen for different shapes — candid and crowded, posed and clean, and at least one non-SmugMug source — precisely so it doesn't end up tuned to a single gallery. See [PRD §7](docs/PRD.md#fixtures).
 
 ## Status and next step
 
-Pre-build. The next deliverable is **P0**: the SmugMug adapter, the detect→embed→store path over 200 images, and — most importantly — the **labeled evaluation set**, which every later accuracy decision is judged against. See [Tech Spec §14](docs/TECH-SPEC.md#14-build-order).
+Pre-build. The next deliverable is **P0**: the first platform adapter, the detect→embed→store path over 200 images, and — most importantly — the **labeled evaluation set**, which every later accuracy decision is judged against. See [Tech Spec §14](docs/TECH-SPEC.md#14-build-order).
 
 ## License
 

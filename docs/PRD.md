@@ -5,7 +5,7 @@
 | **Status** | Draft v0.1 — pre-build |
 | **Owner** | Oz Nakash |
 | **Last updated** | 2026-09-20 |
-| **Reference gallery** | [IIA AI Summit — Opening Reception](https://www.johnwernerphotography.com/IIA-AI-Summit-Silicon-Valley-Sept-13-15-2026/Opening-Reception) (SmugMug, 1,174 images) |
+| **Benchmark workload** | A 1,000-image public gallery (all speed and cost figures normalize to this; test fixtures in §7) |
 | **Related** | [Technical Spec](./TECH-SPEC.md) · [Executive Summary](./EXEC-SUMMARY.md) |
 
 ---
@@ -14,14 +14,14 @@
 
 ### The problem
 
-Event photography is published as a flat wall of images. The IIA AI Summit opening reception alone is **1,174 photos** in one gallery. An attendee who wants their own photos has exactly one tool: scroll, squint, and hope. At roughly 1.5 seconds per thumbnail that is **~30 minutes of manual scanning** for a handful of hits, and most people give up long before the end.
+Photo galleries are published as a flat wall of images. A conference, a wedding, a marathon, a school year, a community event — any of them routinely produces **one to several thousand photos in a single gallery**. Someone who wants their own photos has exactly one tool: scroll, squint, and hope. At roughly 1.5 seconds per thumbnail, a 1,200-photo gallery is **~30 minutes of manual scanning** for a handful of hits, and most people give up long before the end.
 
-The photos exist, they are public, and the person in them will never see them. That is the gap.
+The photos exist, they are public, and the person in them will never see them. That is the gap — and it is the same gap on every gallery platform, which is why this is a product and not a script.
 
 ### Why now
 
 1. **Face recognition is commoditized.** Open-weight models (InsightFace / ArcFace) hit >99.5% accuracy on standard benchmarks and run at tens of images per second on a single small GPU. What required a research team in 2018 is a weekend of plumbing in 2026.
-2. **Cost has collapsed.** Indexing a 1,174-photo gallery costs on the order of **$0.01–$1.20** depending on the engine (see Tech Spec §9). That is an affordable unit economic for a free consumer tool.
+2. **Cost has collapsed.** Indexing 1,000 photos costs on the order of **$0.03–$1.00** depending on the engine (see Tech Spec §9). That is an affordable unit economic for a free consumer tool.
 3. **Nobody has done it for the open web.** Google Photos and Apple Photos do this beautifully *inside your own library*. Photographer platforms (SmugMug, Zenfolio, Pixieset) do it for the *photographer's* paid clients. Nothing lets a third party point at a public gallery URL and ask "where am I?"
 
 ### Why us / why this is defensible enough to be worth building
@@ -70,7 +70,7 @@ Not a moat play — a **wedge**. The differentiated asset is the *gallery adapte
 ### Principles
 
 1. **Zero setup.** No account, no install, no API key from the user. A URL is the entire input.
-2. **Show progress, never a spinner.** A 1,174-image gallery takes minutes. Faces stream in as they are found; the first faces appear in seconds, not at the end.
+2. **Show progress, never a spinner.** A thousand-image gallery takes minutes. Faces stream in as they are found; the first faces appear in seconds, not at the end.
 3. **Anonymous by default.** We recognize *that* two faces are the same person. We never claim *who* they are.
 4. **Link home, don't replace.** Every result deep-links to the photo on the original gallery. We are a lens on someone else's gallery, not a mirror of it.
 5. **Honest confidence.** Borderline matches are shown as "possible matches" in a separate tray, not silently mixed with confident ones.
@@ -97,8 +97,8 @@ A URL goes to an **adapter** that resolves it to a complete image manifest — f
 
 | Phase | Goal | Exit criteria |
 |---|---|---|
-| **P0 — Spike** (week 1) | Prove the pipeline end-to-end on the reference gallery | 200 images from the IIA gallery indexed; face wall renders; measured recall/precision on 50 labeled photos |
-| **P1 — Face wall** (weeks 2–3) | Flow A, production-shaped | Full 1,174-image gallery indexed within SLA; streaming progress; deep links work |
+| **P0 — Spike** (week 1) | Prove the pipeline end-to-end on one real gallery | 200 images from a fixture gallery indexed; face wall renders; measured recall/precision on 50 labeled photos |
+| **P1 — Face wall** (weeks 2–3) | Flow A, production-shaped | Every fixture gallery indexed end-to-end within SLA; streaming progress; deep links work |
 | **P2 — Selfie search** (week 4) | Flow B | Selfie → ranked results in < 3s against a warm index; selfie TTL enforced |
 | **P3 — Share & harden** (weeks 5–6) | Make it shareable and safe | Download/share, rate limits, takedown path, privacy notice, eval harness in CI |
 
@@ -144,9 +144,9 @@ Four jobs, in priority order. Each is scoped to v1 unless marked.
 
 > **When** I've run an event or shot it,
 > **I want** a people index of my gallery,
-> **so I can** deliver each attendee their photos instead of sending everyone a link to all 1,174.
+> **so I can** deliver each attendee their photos instead of sending everyone a link to the whole gallery.
 
-- **Current alternative:** SmugMug/Pixieset client-side face tagging (photographer-side only, paid tiers, per-platform).
+- **Current alternative:** platform-native face tagging (SmugMug, Pixieset) — photographer-side only, paid tiers, and locked to one platform.
 - **v1 scope:** the organizer can use the same face wall and share a per-person link. Bulk delivery is v1.5.
 - **Hired when:** a per-person link is stable and shareable.
 - **Fired when:** the index expires before the organizer finishes using it.
@@ -170,7 +170,7 @@ v1 ships when **every** item below is true. These are binary, not aspirational.
 
 ### Functional
 
-- [ ] **D1** Pasting the reference gallery URL produces a complete index of all 1,174 images with zero silently skipped images (skips are counted and surfaced).
+- [ ] **D1** Pasting a supported gallery URL produces a **complete** index: where the adapter can know the true total, the indexed count matches it exactly; where it cannot, that is stated in the UI. Skipped images are always counted and surfaced, never silent.
 - [ ] **D2** The face wall renders one representative crop per detected person, sorted by photo count descending.
 - [ ] **D3** Clicking a person shows all photos containing them, each deep-linking to its page on the source gallery.
 - [ ] **D4** Uploading a selfie against an indexed gallery returns a ranked result set, split into "confident" and "possible" trays.
@@ -182,8 +182,8 @@ v1 ships when **every** item below is true. These are binary, not aspirational.
 
 - [ ] **D8** On the labeled eval set (§7 of Tech Spec): **recall ≥ 90%** at **precision ≥ 98%** for selfie search.
 - [ ] **D9** Cluster purity ≥ 0.90 and no person split across more than 2 clusters on the eval set.
-- [ ] **D10** Full 1,174-image gallery indexed in **≤ 8 minutes**; first faces visible in **≤ 60 seconds**; selfie query against a warm index in **≤ 3 seconds** (p95).
-- [ ] **D11** All test cases in §7 pass, and the eval harness runs in CI on every change to the model or threshold config.
+- [ ] **D10** A 1,000-image gallery indexed in **≤ 7 minutes** (and any fixture gallery in ≤ 12); first faces visible in **≤ 60 seconds**; selfie query against a warm index in **≤ 3 seconds** (p95).
+- [ ] **D11** All test cases in §7 pass on **every** fixture gallery — not just the one it was tuned on — and the eval harness runs in CI on every change to the model or threshold config.
 
 ### Safety, privacy, and legal
 
@@ -243,14 +243,27 @@ One job type, one queue, one database. Retries are automatic and idempotent. A g
 
 ## 7. Test cases
 
-Format: **ID · Scenario · Expected**. `REF` = the reference gallery. All cases are automatable except where marked *(manual)*.
+Format: **ID · Scenario · Expected**. All cases are automatable except where marked *(manual)*.
+
+### Fixtures
+
+The fixture set exists to stop us from building a tool that works on exactly one gallery. It deliberately spans different **shapes** of gallery, not just different URLs — and must include at least one non-SmugMug source before P1 exits.
+
+| ID | Gallery | Shape | Why it's in the set |
+|---|---|---|---|
+| **FIX-1** | Candid event gallery — [IIA AI Summit, Opening Reception](https://www.johnwernerphotography.com/IIA-AI-Summit-Silicon-Valley-Sept-13-15-2026/Opening-Reception) (SmugMug, ~1,170 images) | Crowded frames, mixed and low light, motion, many faces per photo, lots of profiles | The hard case. Detection recall and cluster fragmentation are decided here |
+| **FIX-2** | Portrait gallery — [IIA AI Summit, All the portraits](https://www.johnwernerphotography.com/IIA-AI-Summit-Silicon-Valley-Sept-13-15-2026/All-the-portraits) (SmugMug, ~1,830 images) | Posed, frontal, even lighting, one or two subjects per frame | The easy case, and therefore the clean signal: a precision failure here is unambiguous. Also the largest fixture — the scale test |
+| **FIX-3** | A non-SmugMug gallery — generic HTML or JSON-LD source *(to be selected in P0)* | Unknown total, lazy loading, no sanctioned API | Proves the adapter layer is not SmugMug-shaped. **Blocks P1 exit** |
+| **FIX-4** | A small non-gallery page (e.g. an article with 3 photos) | Boundary | Proves graceful behavior outside the happy path |
+
+FIX-1 and FIX-2 are the same event, which makes them a useful pair: the same people appear in both, under very different conditions, so a person's embedding quality can be compared across shapes.
 
 ### A. Ingestion
 
 | ID | Scenario | Expected |
 |---|---|---|
-| T-A1 | Submit REF URL | 1,174 images enumerated; count matches the gallery's own `ImageCount`; zero silent skips |
-| T-A2 | Submit REF URL a second time | Cache hit; results returned in < 3s; no re-fetch of source images |
+| T-A1 | Submit FIX-1 URL | Every image enumerated; count matches the source's own reported total exactly; zero silent skips |
+| T-A2 | Submit the same URL a second time | Cache hit; results returned in < 3s; no re-fetch of source images |
 | T-A3 | Submit a URL with no images | Clear message: "No images found at this URL" — not an error page |
 | T-A4 | Submit a password-protected / paywalled gallery | Detected and refused with a specific reason; no partial index created |
 | T-A5 | Submit a non-gallery URL (news article with 3 photos) | Generic adapter handles it; 3 images indexed or an honest "too few images" message |
@@ -259,6 +272,7 @@ Format: **ID · Scenario · Expected**. `REF` = the reference gallery. All cases
 | T-A8 | Gallery contains the same photo twice at different URLs | Deduplicated by content hash; counted once |
 | T-A9 | Domain whose `robots.txt` disallows our path and offers no sanctioned API | Refused with an explanation; logged; not retried |
 | T-A10 | Job exceeds the per-job cost ceiling | Aborted cleanly; partial results retained and labeled partial |
+| T-A11 | Submit FIX-3 (non-SmugMug, no sanctioned API, unknown total) | Indexed via the structured-data or HTML adapter; UI states that completeness is unverified rather than implying a full count |
 
 ### B. Detection & clustering
 
@@ -272,14 +286,14 @@ Format: **ID · Scenario · Expected**. `REF` = the reference gallery. All cases
 | T-B6 | Back-of-head / fully occluded face | Not detected; no phantom cluster |
 | T-B7 | Two different people with similar appearance | Two clusters; no merge |
 | T-B8 | Photo of a poster/screen showing a face | Either excluded by quality filter or clustered separately; documented behavior *(manual review)* |
-| T-B9 | Cluster count on REF | Within ±15% of a human count of distinct attendees on a 100-photo sample *(manual)* |
+| T-B9 | Cluster count on FIX-1 | Within ±15% of a human count of distinct attendees on a 100-photo sample *(manual)* |
 | T-B10 | Re-run clustering with the same inputs | Deterministic — identical cluster assignment |
 
 ### C. Selfie search
 
 | ID | Scenario | Expected |
 |---|---|---|
-| T-C1 | Selfie of a person known to be in 12 REF photos | ≥ 11 of 12 returned as confident; zero strangers in the confident tray |
+| T-C1 | Selfie of a person known to be in 12 FIX-1 photos | ≥ 11 of 12 returned as confident; zero strangers in the confident tray |
 | T-C2 | Selfie of a person **not** in the gallery | Empty confident tray with an explicit "no matches" state — never a nearest-neighbor fallback |
 | T-C3 | Selfie containing two faces | User is asked which face to search, or the largest/most central is used with a visible, changeable indicator |
 | T-C4 | Selfie with no detectable face | Specific error: "We couldn't find a face in that photo" + retake guidance |
@@ -287,7 +301,8 @@ Format: **ID · Scenario · Expected**. `REF` = the reference gallery. All cases
 | T-C6 | Upload of a non-image file, or a 50 MB image | Rejected at the boundary with a clear size/type message |
 | T-C7 | Selfie query against a gallery still indexing | Runs against the indexed subset, with a visible "still indexing — N of M" state and auto-refresh |
 | T-C8 | Same selfie submitted twice | Identical ranked results |
-| T-C9 | p95 latency, warm index, 1,174 images | ≤ 3s end-to-end |
+| T-C9 | p95 latency, warm index, 1,000+ image gallery | ≤ 3s end-to-end |
+| T-C10 | Same selfie run against FIX-1 (candid) and FIX-2 (portraits) | Both return the same person; recall on FIX-2 ≥ recall on FIX-1. A *lower* score on the posed gallery means preprocessing is broken, not that the photos are hard |
 
 ### D. Privacy, safety, and abuse
 
@@ -305,8 +320,8 @@ Format: **ID · Scenario · Expected**. `REF` = the reference gallery. All cases
 
 | ID | Scenario | Expected |
 |---|---|---|
-| T-E1 | Time to first face on REF | ≤ 15s target, ≤ 60s hard limit |
-| T-E2 | Full index of REF | ≤ 8 min |
+| T-E1 | Time to first face, FIX-1 | ≤ 15s target, ≤ 60s hard limit |
+| T-E2 | Full index, per 1,000 images | ≤ 7 min |
 | T-E3 | Browser closed and reopened mid-job | Job continues server-side; returning to the URL shows current progress |
 | T-E4 | Face wall on a 375px-wide mobile viewport | Usable; crops legible; no horizontal scroll |
 | T-E5 | Every result photo | Deep-links to its page on the source gallery and opens correctly |

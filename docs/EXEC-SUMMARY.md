@@ -6,9 +6,11 @@
 
 ---
 
-## The problem, in one number
+## The problem
 
-**1,174.** That is how many photos are in a single reception gallery from the IIA AI Summit. If you were there, the only way to find your photos today is to scroll all 1,174 and squint — about 30 minutes of manual scanning for a handful of hits. Most people never try. The photos exist, they're public, and the person in them will never see them.
+A single event gallery routinely holds **one to several thousand photos**. A conference, a wedding, a marathon, a school year — the pattern is identical. If you're in there, the only way to find your photos today is to scroll the whole gallery and squint: roughly **30 minutes of manual scanning** per thousand images, for a handful of hits. Most people never try.
+
+The photos exist, they're public, and the person in them will never see them. It's the same gap on every gallery platform — which is what makes this a product rather than a script.
 
 ## The product
 
@@ -21,7 +23,7 @@ Zero setup: no account, no install, no API key from the user. A URL is the entir
 
 ## Why now
 
-Face recognition is commoditized (open ArcFace weights, >99.5% benchmark accuracy), and indexing a 1,174-photo gallery costs **~3 cents**. Google Photos does this inside *your* library; SmugMug does it for a photographer's *paying clients*. Nothing lets a third party point at a public gallery and ask "where am I?"
+Face recognition is commoditized (open ArcFace weights, >99.5% benchmark accuracy), and indexing 1,000 photos costs **~3 cents**. Google Photos does this inside *your* library; SmugMug does it for a photographer's *paying clients*. Nothing lets a third party point at a public gallery and ask "where am I?"
 
 The durable asset isn't the recognition — that's a commodity. It's the **gallery adapter layer**: reliably and legitimately turning an arbitrary gallery URL into a complete image manifest. Every platform adapter compounds.
 
@@ -29,7 +31,7 @@ The durable asset isn't the recognition — that's a commodity. It's the **galle
 
 1. **Find me** *(primary)* — find every photo I'm in without scrolling the whole gallery.
 2. **Find the people I care about** — see who's in the gallery and jump to one person's photos.
-3. **Send people their photos** *(organizer/photographer)* — a people index so attendees get their own shots, not a link to all 1,174.
+3. **Send people their photos** *(organizer/photographer)* — a people index so attendees get their own shots, not a link to the whole gallery.
 4. **Get the photos out** — download or share the results in one action.
 
 ## What we will not build
@@ -38,12 +40,12 @@ No names. No cross-gallery face database. No stored selfies. No scraping what `r
 
 ## Done vs. good
 
-**Done** is 20 binary gates across function, quality, privacy, and operations, validated by **43 test cases**. The load-bearing ones:
+**Done** is 20 binary gates across function, quality, privacy, and operations, validated by **45 test cases** run across a *set* of fixture galleries. The load-bearing ones:
 
 | | Gate |
 |---|---|
 | Accuracy | **≥ 90% recall at ≥ 98% precision**; cluster purity ≥ 0.90 |
-| Speed | First faces **≤ 15s** · full 1,174-image index **≤ 8 min** · selfie query **≤ 3s** |
+| Speed | First faces **≤ 15s** · **≤ 7 min per 1,000 images** · selfie query **≤ 3s** |
 | Privacy | Selfies never touch disk, 30-min TTL · indexes expire in 30 days · working delete |
 
 **Good** goes past the gates on one axis above all: **precision is the protected metric.** One stranger in your results costs more trust than three missed photos cost value — so borderline matches go in a visibly separate "possible" tray rather than being quietly mixed in. Good also means fast enough to feel free (results stream; nobody watches an 8-minute progress bar) and boring to operate (one job type, one queue, resumable, cost capped to the cent).
@@ -58,20 +60,22 @@ URL → adapter → manifest → fetch+dedupe → SCRFD detect → ArcFace embed
 
 Next.js app (UI, SSE progress) + Python worker (InsightFace on ONNXRuntime) + Postgres/pgvector + Redis + R2. Two services, one database.
 
-**The decision that matters most:** self-hosted InsightFace over AWS Rekognition — **~35× cheaper** ($0.03 vs $1.17 per reference gallery), no vendor lock, and embeddings stay ours. Rekognition is kept as a documented failover behind the same interface.
+**The decision that matters most:** self-hosted InsightFace over AWS Rekognition — **~35× cheaper** ($0.03 vs $1.00 per 1,000 images), no vendor lock, and embeddings stay ours. Rekognition is kept as a documented failover behind the same interface.
 
-**Reference workload, measured:** ~2.5 min and ~$0.03 on a small GPU; ~7.5 min and ~$0.04 CPU-only. Both clear the 8-minute gate; the CPU path clears it with little margin, which is why fetch and inference overlap.
+**Per 1,000 images:** ~2 min and ~$0.03 on a small GPU; ~6.5 min and ~$0.04 CPU-only. Both clear the 7-minute gate; the CPU path clears it with little margin, which is why fetch and inference overlap — and why larger galleries need the GPU path.
+
+**The real engineering risk isn't the models, it's ingestion.** Gallery pages are JS-rendered: a naive fetch returns a handful of image URLs out of a thousand *and looks like it worked*. So every adapter must either verify its count against a source-reported total or openly declare completeness unverified. Silent truncation is the most dangerous failure mode in the system.
 
 ## Plan
 
 | Phase | Weeks | Deliverable |
 |---|---|---|
-| **P0** | 1 | SmugMug adapter, detect→embed→store on 200 images, **labeled eval set + harness** |
-| **P1** | 2–3 | Clustering, face wall, streaming progress, full 1,174-image run |
+| **P0** | 1 | First platform adapter, detect→embed→store on 200 images, **labeled eval set + harness** |
+| **P1** | 2–3 | Clustering, face wall, streaming progress, full runs across **every fixture** — including a non-SmugMug gallery |
 | **P2** | 4 | Selfie search, two-tier results, TTL enforcement |
 | **P3** | 5–6 | Share/download, rate limits, privacy notice, takedown path |
 
-**P0 is not a throwaway spike.** It carries the eval set — the artifact every later accuracy decision is judged against. Build it first or tune blind.
+**P0 is not a throwaway spike.** It carries the eval set — the artifact every later accuracy decision is judged against. Build it first or tune blind. And the fixtures are not decoration: a system tuned against one gallery is a demo, so a non-SmugMug fixture gates P1's exit.
 
 ## Top risks
 
@@ -81,7 +85,7 @@ Next.js app (UI, SSE progress) + Python worker (InsightFace on ONNXRuntime) + Po
 | **Over-split clusters** make the face wall noisy — the most likely silent quality failure | Centroid consolidation pass; fragmentation is an explicit eval gate (≤ 2.0 clusters/person) |
 | **Biometric-privacy exposure** (BIPA/CUBI) | Anonymous clusters, TTLs, no persistence — plus counsel before public launch |
 | **Misuse for stalking** | No naming, no cross-gallery search, rate limits, denylist, takedown path |
-| **SmugMug API key** unavailable → reference gallery unreachable via the sanctioned path | Register the key in P0 as a hard gate; headless fallback needs an explicit robots decision |
+| **A platform's sanctioned API needs credentials we can't get** — that loses a whole category of galleries, not one | Secure each adapter's access path before it ships; never depend on a single platform; headless fallback only with an explicit robots decision |
 
 ## Three decisions needed before P3
 
@@ -91,4 +95,4 @@ Next.js app (UI, SSE progress) + Python worker (InsightFace on ONNXRuntime) + Po
 
 ## Next step
 
-Register the SmugMug API key and start **P0** against the reference gallery — [IIA AI Summit Opening Reception](https://www.johnwernerphotography.com/IIA-AI-Summit-Silicon-Valley-Sept-13-15-2026/Opening-Reception), album `B2cCGn`, 1,174 images. The first thing that gets built is the eval set.
+Start **P0**: secure the first adapter's API access, select the non-SmugMug fixture, and build the labeled eval set before anything else. Fixture galleries are listed in [PRD §7](./PRD.md#fixtures).

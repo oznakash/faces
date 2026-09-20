@@ -6,7 +6,7 @@
 | **Owner** | Oz Nakash |
 | **Last updated** | 2026-09-20 |
 | **Implements** | [PRD](./PRD.md) |
-| **Reference workload** | SmugMug album `B2cCGn`, 1,174 images |
+| **Benchmark workload** | A 1,000-image public gallery — the unit all speed and cost figures use (fixtures: [PRD §7](./PRD.md#fixtures)) |
 
 ---
 
@@ -63,7 +63,7 @@ Two services, one database. The Next.js app never runs a model; the worker never
 | Headless fetch (fallback adapter only) | **Playwright** | Only for galleries with no sanctioned API |
 | Hosting | App: Vercel · Worker: Fly.io / Runpod GPU (L4) with CPU autoscale fallback | |
 
-**Rejected:** AWS Rekognition Collections (~$1.17 per reference gallery vs ~$0.03 self-hosted, and embeddings never leave the vendor — kept as a documented failover, see §9). face_recognition/dlib (materially weaker on profile and low-light faces). A universal headless scraper as the primary path (slow, fragile, and disrespects sanctioned APIs).
+**Rejected:** AWS Rekognition Collections (~$1.00 per 1,000 images vs ~$0.03 self-hosted, and embeddings never leave the vendor — kept as a documented failover, see §9). face_recognition/dlib (materially weaker on profile and low-light faces). A universal headless scraper as the primary path (slow, fragile, and disrespects sanctioned APIs).
 
 ---
 
@@ -82,11 +82,13 @@ URL → normalize → adapter match (by host + URL shape)
    → image manifest: [{source_url, page_url, width, height, caption?}]
 ```
 
-Each adapter reports `confidence` and `completeness_known` (does it know the true total?). The SmugMug adapter knows — it reads `ImageCount` — so we can assert 1,174 in, 1,174 accounted for. Adapters that cannot know say so, and the UI reflects that honestly.
+Each adapter reports `confidence` and `completeness_known` (does it know the true total?). A platform-API adapter usually knows — SmugMug reports an `ImageCount`, so we can assert *N in, N accounted for* and fail the job on any shortfall. An HTML or headless adapter usually cannot, and must say so rather than let a partial crawl look complete. **Silent truncation is the single most dangerous failure mode in this system**: a gallery where only the first 20 lazy-loaded images were read returns results that look perfectly fine and are mostly missing.
 
-### 3.2 SmugMug adapter (the reference path)
+### 3.2 Worked example: a platform-API adapter (SmugMug)
 
-The reference gallery's `robots.txt` is:
+SmugMug is the first adapter because it is a common host for event galleries and because it demonstrates the general pattern — *find the sanctioned interface, use it, and verify completeness against the platform's own count*. The same shape applies to Zenfolio, Flickr and Pixieset.
+
+A representative SmugMug-hosted site serves this `robots.txt`:
 
 ```
 user-agent: *
@@ -98,12 +100,14 @@ allow: /api/v2
 Generic crawling is disallowed; the v2 API is explicitly allowed. So:
 
 1. `GET` the gallery page once (a single user-directed fetch, not a crawl).
-2. Extract `AlbumKey` from the embedded bootstrap JSON — for the reference URL, `"AlbumKey":"B2cCGn"` and `"ImageCount":1174`.
+2. Extract `AlbumKey` from the embedded bootstrap JSON — the page also carries `ImageCount`, which becomes the completeness assertion. (Verified against the fixture galleries in [PRD §7](./PRD.md#fixtures).)
 3. Paginate `GET /api/v2/album/{AlbumKey}!images?start=N&count=100` with an anonymous SmugMug API key (free, application-level, never the user's).
 4. Each `AlbumImage` yields size variants (`S/M/L/XL`) and a `WebUri` for the deep link home. **Fetch the `M` variant** (~800px long edge, ~150 KB) — enough for detection and embedding at a fraction of the bytes.
 5. Assert `len(manifest) == ImageCount`; any shortfall is a hard job error, not a silent truncation.
 
-> **Open dependency:** an anonymous SmugMug API key must be registered before P1. Without it, `/api/v2` returns `401` (verified). If the key is unavailable, the fallback is the headless adapter — slower, and it needs an explicit robots-compliance decision.
+**The generalizable lesson:** the gallery page itself is JS-rendered — a naive HTML fetch yields a handful of image URLs out of a thousand and *looks like it worked*. Every adapter must therefore either verify against a source-reported total or declare its count unverified.
+
+> **Open dependency, generalizes to every platform adapter:** the sanctioned API needs an application-level key, and `/api/v2` returns `401` without one (verified). **No adapter ships until its sanctioned access path is secured** — otherwise the only route left is the headless fallback, which is slower and carries a robots-compliance decision that has to be made explicitly rather than by default.
 
 ### 3.3 Crawl policy
 
@@ -123,7 +127,7 @@ Per image, all steps idempotent and keyed by `content_sha256`:
 |---|---|---|
 | 1 | **Fetch** | Streamed, 20s timeout, max 25 MB, content-type verified |
 | 2 | **Hash & dedupe** | SHA-256 of bytes; a repeat hash short-circuits the whole pipeline |
-| 3 | **Decode & normalize** | EXIF orientation applied; resize so long edge ≤ 1600px (a no-op for the SmugMug `M` variant, which arrives at ~800px) |
+| 3 | **Decode & normalize** | EXIF orientation applied; resize so long edge ≤ 1600px (a no-op when the adapter can request a ~800px variant, as SmugMug's `M` does) |
 | 4 | **Detect** | SCRFD, `det_thresh=0.5`, `det_size=(1024,1024)`; returns bbox, 5-point landmarks, score |
 | 5 | **Quality filter** | Reject face if: bbox short edge < 40px, detection score < 0.6, Laplacian blur variance < 25, or yaw estimate > 75°. Rejected faces are stored with `excluded_reason` — counted, never silently dropped |
 | 6 | **Align** | Similarity transform from the 5 landmarks to the canonical 112×112 ArcFace template |
@@ -175,7 +179,7 @@ Thresholds are **configuration, not constants** (`config/thresholds.yaml`), beca
 
 Shipping face matching without a labeled eval set is guessing. The eval harness is P0 scope, not P3.
 
-**Eval set:** 300 photos sampled from the reference gallery, hand-labeled with face bounding boxes and anonymous person IDs (`person_01`…), plus 15 held-out "selfie" crops — 10 of people who are in the set, 5 of people who are not (the negative controls that catch nearest-neighbor fallback, T-C2).
+**Eval set:** 300 photos sampled across fixture galleries ([PRD §7](./PRD.md#fixtures)) — weighted toward the candid, crowded shape, because that is where accuracy is actually decided — hand-labeled with face bounding boxes and anonymous person IDs (`person_01`…), plus 15 held-out "selfie" crops — 10 of people who are in the set, 5 of people who are not (the negative controls that catch nearest-neighbor fallback, T-C2).
 
 **Metrics:**
 
@@ -273,27 +277,27 @@ Deletion is `DELETE FROM galleries WHERE id = $1` — cascades handle everything
 
 ## 9. Performance and cost budget
 
-**Reference workload: 1,174 images.**
+**Benchmark: 1,000 images, ~3.5 faces each (~3,500 faces).** Scale linearly for larger galleries.
 
 | Stage | GPU path (L4) | CPU path (8 vCPU) |
 |---|---|---|
-| Fetch (4 concurrent, ~150 KB `M` variant) | ~100s | ~100s |
-| Detect + embed (~3.5 faces/image ≈ 4,100 faces) | ~60s @ ~20 img/s | ~390s @ ~3 img/s |
-| Cluster (4,100 vectors) | ~5s | ~10s |
-| Crop + upload | ~30s | ~45s |
-| **Total (overlapped)** | **~2.5 min** | **~7.5 min** |
+| Fetch (4 concurrent, ~150 KB medium variant) | ~85s | ~85s |
+| Detect + embed | ~50s @ ~20 img/s | ~333s @ ~3 img/s |
+| Cluster (~3,500 vectors) | ~5s | ~10s |
+| Crop + upload | ~25s | ~40s |
+| **Total (overlapped)** | **~2 min** | **~6.5 min** |
 
-Both paths clear the ≤ 8 min gate (D10); the CPU path clears it with little margin, which is why fetch and inference overlap rather than run in sequence. Time-to-first-face is governed by the first completed batch — **< 15s on either path**.
+Both paths clear the ≤ 7 min per-1,000 gate (D10); the CPU path clears it with little margin, which is why fetch and inference overlap rather than run in sequence — and why a 2,000-image gallery needs the GPU path to stay inside its SLA. Time-to-first-face is governed by the first completed batch — **< 15s on either path**.
 
-| Engine | Cost per 1,174 images | Cost per 1,000 |
+| Engine | Cost per 1,000 images | Cost per 10,000 |
 |---|---|---|
-| Self-hosted GPU (L4 @ ~$0.80/hr) | **~$0.033** | ~$0.028 |
-| Self-hosted CPU (8 vCPU @ ~$0.34/hr) | ~$0.043 | ~$0.037 |
-| AWS Rekognition `IndexFaces` @ $0.001/img | ~$1.17 | ~$1.00 |
+| Self-hosted GPU (L4 @ ~$0.80/hr) | **~$0.027** | ~$0.27 |
+| Self-hosted CPU (8 vCPU @ ~$0.34/hr) | ~$0.037 | ~$0.37 |
+| AWS Rekognition `IndexFaces` @ $0.001/img | ~$1.00 | ~$10.00 |
 
 Self-hosting is ~35× cheaper and keeps embeddings in our control. Rekognition stays documented as a failover behind the same worker interface, so a model outage is a config change, not a rewrite.
 
-**Storage:** ~4,100 crops × ~18 KB ≈ 74 MB per gallery, plus ~8 MB of vectors. Negligible, and it expires.
+**Storage:** ~3,500 crops × ~18 KB ≈ 63 MB per 1,000 images, plus ~7 MB of vectors. Negligible, and it expires.
 
 **Per-job cost ceiling:** default 200 cents. Exceeding it aborts with partial results retained (T-A10, D18).
 
@@ -355,11 +359,11 @@ Face embeddings are **biometric identifiers**. Under GDPR Art. 9 they are specia
 
 | Risk | Impact | Likelihood | Mitigation |
 |---|---|---|---|
-| SmugMug API key unavailable or revoked | Reference gallery unreachable via the sanctioned path | Medium | Register the key in P0 as a gate; headless fallback with an explicit robots decision |
+| A platform's sanctioned API needs credentials we can't get (or revokes them) | That whole platform becomes unreachable via the legitimate path — not one gallery, a category | Medium | Secure the key as a gate before the adapter ships; headless fallback only with an explicit robots decision; never let one platform be a single point of failure |
 | Precision below 0.98 on event-quality photos | Core trust broken | Medium | Two-tier thresholds; precision is the optimization constraint, not a target; eval gate in CI |
-| A platform blocks `FacesBot` | Ingestion breaks for that platform | Medium | Honest UA, conservative rates, API-first; partnership conversation over evasion — we will not rotate UAs to get around a block |
+| A platform blocks `FacesBot` | Ingestion breaks for every gallery on that platform | Medium | Honest UA, conservative rates, API-first; partnership conversation over evasion — we will not rotate UAs to get around a block |
 | BIPA/CUBI exposure | Legal, existential for a side project | Low–Medium | Anonymous clusters, TTLs, no persistence, counsel before launch, geo-gating if advised |
-| CPU-only hosting can't hold the 8-min SLA | Missed D10 | Medium | Overlap fetch and inference; scale to GPU on demand; smaller `M` variants |
+| CPU-only hosting can't hold the SLA on larger galleries | Missed D10 | Medium | Overlap fetch and inference; scale to GPU on demand; smaller `M` variants |
 | Someone uses it to stalk an individual | Serious harm, reputational | Low–Medium | No naming, no cross-gallery search, rate limits, takedown path, denylist, abuse logging |
 | Over-splitting clusters makes the wall noisy | Face wall (JTBD-2) feels broken | High | Centroid consolidation pass; fragmentation is an explicit eval gate (≤ 2.0) |
 
@@ -369,9 +373,9 @@ Face embeddings are **biometric identifiers**. Under GDPR Art. 9 they are specia
 
 | Phase | Deliverable | Gate to proceed |
 |---|---|---|
-| **P0** | SmugMug adapter (API key registered), fetch → detect → embed → store, 200 images of the reference gallery, **eval set labeled and harness running** | Detection recall ≥ 0.95; thresholds calibrated |
-| **P1** | Clustering, face wall UI, SSE progress, caching, full 1,174-image run | D1–D3, D5–D6, D10 pass |
+| **P0** | First platform adapter (API key registered), fetch → detect → embed → store over 200 images, **eval set labeled and harness running**, FIX-3 candidate selected | Detection recall ≥ 0.95; thresholds calibrated |
+| **P1** | Clustering, face wall UI, SSE progress, caching, full runs over **every fixture** including a non-SmugMug one | D1–D3, D5–D6, D10–D11 pass on all fixtures |
 | **P2** | Selfie search, two-tier results, multi-face disambiguation, TTL enforcement | D4, D8–D9, D12 pass; T-C1–T-C9 green |
-| **P3** | Download/share, rate limits, privacy notice, takedown path, denylist, cost ceiling, generic HTML adapter | D7, D13–D20 pass; legal Q1/Q2 resolved |
+| **P3** | Download/share, rate limits, privacy notice, takedown path, denylist, cost ceiling, second platform adapter | D7, D13–D20 pass; legal Q1/Q2 resolved |
 
-**P0 is not a throwaway spike.** It carries the eval set, which is the artifact every later decision is judged against — build it first or tune blind.
+**P0 is not a throwaway spike.** It carries the eval set, which is the artifact every later decision is judged against — build it first or tune blind. And the fixture set is not decoration: a system tuned against a single gallery is a demo, not a product, so a non-SmugMug fixture gates P1's exit.
