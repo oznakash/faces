@@ -109,7 +109,9 @@ Opacity and border-color only, 120ms ease. No transforms, no lifts. A tile shows
 
 **Face tile.** Square crop, 0 radius, no border. Count underneath in 12px `--ink-2`. Hover: 1px `--accent` outline. Active: 2px `--accent` outline.
 
-**Photo tile.** 4:3, `object-fit: cover`, 0 radius. Hover: `--overlay` band at the bottom with "Open original ↗" in `--overlay-ink`. Match score, when shown, sits in that same band.
+**Photo grid.** A flat matrix, never grouped: **6 columns** ≥1100px, 4 to 800px, 3 to 520px, 2 below. 8px gap. Each card carries its details (`data-image`, `data-source`, `data-page`, `data-score`) so the grid can be filtered or searched without re-fetching.
+
+**Photo tile.** 4:3, `object-fit: cover`, 0 radius. Hover: `--overlay` band at the bottom with "Open original ↗" and, in a collection, the source gallery's name, in `--overlay-ink`. Match score, when shown, sits top-right in the same overlay style.
 
 **Gallery row.** `--surface`, hairline border, 14px 16px padding. Title in `--ink`, URL and meta in `--ink-2`, short link in a hairline-boxed `code` on the right with a text-button *Copy link*.
 
@@ -117,7 +119,7 @@ Opacity and border-color only, 120ms ease. No transforms, no lifts. A tile shows
 
 **Source row (collections).** Hairline-separated rows, no background: gallery title as a link to its Faces page, its origin URL beneath in `--ink-2` opening in a new tab, counts right-aligned. Reads as a caption list, not a card list.
 
-**Sub-head (h3).** 13px uppercase, letter-spacing .06em, `--ink-2`. Used only to group photos by source inside a collection.
+**Sub-head (h3).** 13px uppercase, letter-spacing .06em, `--ink-2`. Used for form sub-sections on the home page; never to split a photo grid.
 
 ---
 

@@ -59,11 +59,14 @@
   .face .n b{font-weight:400;color:var(--ink)}
 
   /* Photo tiles — 4:3, hover overlay band like the source site's tile-info */
-  .photos{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:8px}
+  .photos{display:grid;grid-template-columns:repeat(6,1fr);gap:8px}
+  @media (max-width:1100px){.photos{grid-template-columns:repeat(4,1fr)}}
+  @media (max-width:800px){.photos{grid-template-columns:repeat(3,1fr)}}
+  @media (max-width:520px){.photos{grid-template-columns:repeat(2,1fr)}}
   .ph{position:relative;background:var(--surface-2)}
   .ph img{width:100%;aspect-ratio:4/3;object-fit:cover;display:block}
   .ph a{position:absolute;inset:0;color:var(--overlay-ink);text-decoration:none}
-  .ph a::after{content:"Open original \2197";position:absolute;left:0;right:0;bottom:0;padding:6px 10px;font-size:12px;background:var(--overlay);opacity:0;transition:opacity .12s ease}
+  .ph a::after{content:"Open original \2197  " attr(data-source);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;position:absolute;left:0;right:0;bottom:0;padding:6px 10px;font-size:12px;background:var(--overlay);opacity:0;transition:opacity .12s ease}
   .ph:hover a::after{opacity:1}
   .ph .s{position:absolute;right:0;top:0;font-size:11px;letter-spacing:.06em;background:var(--overlay);color:var(--overlay-ink);padding:3px 8px}
 
@@ -316,19 +319,15 @@ async function showPerson(cid, el){
   show('#personSec', true);
   $('#personTitle').textContent = d.person.label;
   $('#personCount').textContent = `${fmt(d.photos.length)} photos · click any to open the original`;
-  $('#photos').innerHTML = grouped(d.photos, ph => photoCard(ph));
+  $('#photos').innerHTML = d.photos.map(ph => photoCard(ph)).join('');
   $('#personSec').scrollIntoView({behavior:'smooth', block:'start'});
 }
-// In a collection, photos are grouped under their source gallery.
-function grouped(items, render){
-  if (ctx.kind !== 'collection') return `<div class="photos">${items.map(render).join('')}</div>`;
-  const by = new Map();
-  for (const it of items) { const k = it.source_title || it.source_slug || '—'; (by.get(k) || by.set(k, []).get(k)).push(it); }
-  return [...by].map(([k, v]) => `<h3>${esc(k)} · ${v.length}</h3><div class="photos">${v.map(render).join('')}</div>`).join('');
-}
+// Every card carries its details (source gallery, page, score) so the grid can be filtered or searched later.
 function photoCard(ph, score){
-  return `<div class="ph"><img src="${esc(ph.source_url)}" loading="lazy" alt="">
-    <a href="${esc(ph.page_url || ph.source_url)}" target="_blank" rel="noopener" title="open original"></a>
+  const src = ph.source_title || '';
+  return `<div class="ph" data-image="${esc(ph.id||'')}" data-source="${esc(ph.source_slug||'')}" data-page="${esc(ph.page_url||'')}"${score!=null?` data-score="${score}"`:''}>
+    <img src="${esc(ph.source_url)}" loading="lazy" alt="">
+    <a href="${esc(ph.page_url || ph.source_url)}" target="_blank" rel="noopener" title="${esc(src ? 'Open original · ' + src : 'Open original')}" data-source="${esc(src ? '· ' + src : '')}"></a>
     ${score!=null?`<span class="s">${Math.round(score*100)}%</span>`:''}</div>`;
 }
 $('#closePerson').onclick = () => show('#personSec', false);
@@ -344,8 +343,8 @@ $('#selfie').onchange = async () => {
   if (!r.ok){ $('#dropText').textContent = d.detail?.message || 'Search failed'; return; }
   $('#dropText').textContent = `${d.confident.length} confident · ${d.possible.length} possible${d.faces_in_selfie>1?` · using the largest of ${d.faces_in_selfie} faces`:''}`;
   $('#results').innerHTML =
-    (d.confident.length ? `<h2>Confident matches <small>${d.confident.length}</small></h2>${grouped(d.confident, p=>photoCard(p,p.score))}` : `<div class="empty">No confident matches here.</div>`) +
-    (d.possible.length ? `<h2>Possible matches <small>${d.possible.length} · lower confidence, shown separately on purpose</small></h2>${grouped(d.possible, p=>photoCard(p,p.score))}` : '');
+    (d.confident.length ? `<h2>Confident matches <small>${d.confident.length}</small></h2><div class="photos">${d.confident.map(p=>photoCard(p,p.score)).join('')}</div>` : `<div class="empty">No confident matches here.</div>`) +
+    (d.possible.length ? `<h2>Possible matches <small>${d.possible.length} · lower confidence, shown separately on purpose</small></h2><div class="photos">${d.possible.map(p=>photoCard(p,p.score)).join('')}</div>` : '');
 };
 const drop = $('#drop');
 drop.ondragover = e => { e.preventDefault(); };
