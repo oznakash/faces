@@ -466,3 +466,24 @@ A collection is a named, ordered set of indexed galleries presented as **one set
 **Third and fourth sources, "Day 1 everything" (2,084 images, 29.6 min, 4,201 usable / 4,607 excluded, 386 people) and "Day 2 everything" (1,637 images, 25.6 min, 2,693 usable / 4,336 excluded, 311 people), added without re-indexing anything.** Pool: **11,000 faces → 794 people**; 280 people appear in 2+ galleries and 30 in all four. The largest pooled person now spans 574 photos across all four sources — consistent with the host reading above. Each regroup of the 11k-face pool took a few seconds; the two ~2k-image galleries ran concurrently in one process, serialized on the inference lock, at ~0.85 s/image effective.
 
 **Privacy posture is unchanged.** Pooling widens what one selfie can be matched against, which is exactly why a collection is an explicit, named, user-created thing rather than a default — nothing is ever searched across galleries that nobody grouped.
+
+---
+
+## 17. Hosting profile
+
+The hosted deployment is the local profile minus indexing: FastAPI + the models + SQLite + crops on a persistent volume. It exists to serve one standalone collection page and its selfie search to people on phones; everything heavy stays on the operator's machine.
+
+| | Local | Hosted |
+|---|---|---|
+| Indexing | on | **off** (`FACES_ALLOW_INDEX=1` to enable; not recommended — Chromium, long CPU jobs) |
+| Auth | none | `FACES_ADMIN_TOKEN`: Bearer on every write route and the admin listings; `/admin?token=…` stores it in that browser |
+| Data | `./data` | `/data` volume: `faces.db`, `crops/`, `models/` (downloaded on first start) |
+| Getting an index there | — | `publish.sh` → `POST /api/admin/import` with a tarball of `faces.db` + `crops/`; validated (no path escapes or links, must open, must have the expected tables), then swapped in under the inference lock; previous index kept as `data.prev` |
+| Public writes | — | only selfie search, per-IP token bucket (20/min, burst 8), `Retry-After` on 429 |
+| Image | — | `python:3.12-slim`, ~1 GB with models cached on the volume; needs ~1.5 GB RAM for the model |
+
+**Why publish-from-local instead of index-on-server.** Indexing needs a headless browser and 15–30 minutes of CPU per gallery; a shared container is the wrong place for it, and it would put the crawl's egress on the host's IP. Publishing a finished index is a 150 MB upload that takes a minute.
+
+**Why the bundle is never in the repo or a release.** `faces.db` holds the embeddings — biometric identifiers under GDPR Art. 9 / BIPA. They travel operator → server over HTTPS behind the admin token and nowhere else. Source photos are never copied anywhere; the page hotlinks them.
+
+**Untested as of writing:** the Docker build itself (no Docker on the development machine). The `insightface` package builds from source on Linux, hence `build-essential` in the build stage; `libgomp1` is for ONNX Runtime. If the platform's memory ceiling is under ~1.5 GB the model won't load — the fallback is `buffalo_s` with a re-index.

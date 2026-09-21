@@ -7,11 +7,18 @@ import json
 import logging
 import os
 import queue
+import secrets
+import shutil
+import tarfile
+import tempfile
+import threading
+import time
+from pathlib import Path
 from contextlib import asynccontextmanager
 
 import cv2
 import numpy as np
-from fastapi import FastAPI, File, HTTPException, UploadFile
+from fastapi import Depends, FastAPI, File, Header, HTTPException, UploadFile
 from fastapi.responses import FileResponse, RedirectResponse, StreamingResponse
 from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.staticfiles import StaticFiles
@@ -19,7 +26,7 @@ from starlette.requests import Request
 from pydantic import BaseModel
 
 from . import adapters, cluster, collections, db, models, pipeline
-from .config import CROPS, ROOT, cfg
+from .config import CROPS, DATA, DB_PATH, ROOT, cfg
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(message)s")
 log = logging.getLogger("faces.server")
@@ -87,6 +94,54 @@ INDEX = ROOT / "static" / "index.html"
 NO_CACHE = {"Cache-Control": "no-cache"}         # the page must never be stale after a redesign
 # Standalone: expose exactly one collection. "/" goes there; the working home lives at /admin.
 STANDALONE = os.environ.get("FACES_STANDALONE", "").strip() or None
+# Hosted: set FACES_ADMIN_TOKEN and every write route + /admin need it. Indexing is off
+# unless FACES_ALLOW_INDEX=1 — the server is a search box; galleries are indexed locally
+# and published to it with publish.sh.
+ADMIN_TOKEN = os.environ.get("FACES_ADMIN_TOKEN", "").strip() or None
+ALLOW_INDEX = os.environ.get("FACES_ALLOW_INDEX", "").strip() == "1" or ADMIN_TOKEN is None
+
+
+def require_admin(authorization: str | None = Header(default=None)):
+    """No token configured (local) -> open. Token configured (hosted) -> Bearer required."""
+    if ADMIN_TOKEN is None:
+        return
+    given = (authorization or "").removeprefix("Bearer ").strip()
+    if not given or not secrets.compare_digest(given, ADMIN_TOKEN):
+        raise HTTPException(401, {"error_code": "UNAUTHORIZED", "message": "Admin token required."})
+
+
+class _Bucket:
+    """Per-IP token bucket for the one public write: selfie search."""
+    def __init__(self, rate_per_min: int, burst: int):
+        self.rate, self.burst, self.state, self.lock = rate_per_min / 60.0, burst, {}, threading.Lock()
+
+    def allow(self, key: str) -> bool:
+        now = time.monotonic()
+        with self.lock:
+            tokens, last = self.state.get(key, (self.burst, now))
+            tokens = min(self.burst, tokens + (now - last) * self.rate)
+            if tokens < 1:
+                self.state[key] = (tokens, now)
+                return False
+            self.state[key] = (tokens - 1, now)
+            if len(self.state) > 10000:                  # forget the oldest on abuse
+                for k in list(self.state)[:5000]:
+                    self.state.pop(k, None)
+            return True
+
+
+SEARCH_BUCKET = _Bucket(rate_per_min=20, burst=8)
+
+
+def _client_ip(request: Request) -> str:
+    fwd = request.headers.get("x-forwarded-for")
+    return (fwd.split(",")[0].strip() if fwd else request.client.host) if request.client or fwd else "?"
+
+
+def _rate_limit(request: Request):
+    if not SEARCH_BUCKET.allow(_client_ip(request)):
+        raise HTTPException(429, {"error_code": "RATE_LIMITED", "message": "Too many searches — try again in a minute."},
+                            headers={"Retry-After": "60"})
 
 
 class SubmitBody(BaseModel):
@@ -107,14 +162,26 @@ def _gallery_or_404(con, key: str) -> dict:
 @app.get("/")
 def index():
     if STANDALONE:
-        return RedirectResponse(f"/c/{STANDALONE}", status_code=302)
+        con = db.connect()
+        exists = collections.get(con, STANDALONE) is not None
+        con.close()
+        if exists:
+            return RedirectResponse(f"/c/{STANDALONE}", status_code=302)
+        return FileResponse(ROOT / "static" / "empty.html", headers=NO_CACHE)
     return FileResponse(INDEX, headers=NO_CACHE)
 
 
 @app.get("/admin")
 def admin():
-    """The working home: index galleries, build collections. Not linked from anywhere public."""
+    """The working home: index galleries, build collections. Not linked from anywhere public.
+    Hosted: the page loads, but every call it makes needs the admin token (entered once)."""
     return FileResponse(INDEX, headers=NO_CACHE)
+
+
+@app.get("/api/config")
+def client_config():
+    """What the page needs to know: whether admin calls need a token, whether indexing is on."""
+    return {"hosted": ADMIN_TOKEN is not None, "allow_index": ALLOW_INDEX, "standalone": STANDALONE}
 
 
 @app.get("/g/{slug}")
@@ -130,8 +197,11 @@ def collection_page(slug: str):
 
 
 # ---------------------------------------------------------------- galleries
-@app.post("/api/galleries")
+@app.post("/api/galleries", dependencies=[Depends(require_admin)])
 def submit(body: SubmitBody):
+    if not ALLOW_INDEX:
+        raise HTTPException(403, {"error_code": "INDEXING_DISABLED",
+                                  "message": "This server doesn't index. Index locally and publish."})
     try:
         gid, cached = pipeline.start(body.url)
     except ValueError as e:
@@ -142,7 +212,7 @@ def submit(body: SubmitBody):
     return {"gallery_id": gid, "slug": g["slug"], "short_url": g["short_url"], "cached": cached}
 
 
-@app.get("/api/galleries")
+@app.get("/api/galleries", dependencies=[Depends(require_admin)])
 def list_galleries():
     con = db.connect()
     rows = con.execute(
@@ -220,7 +290,7 @@ def person_photos(cid: str):
     return {"person": dict(c), "photos": _with_thumbs([dict(r) for r in rows])}
 
 
-@app.post("/api/galleries/{key}/search")
+@app.post("/api/galleries/{key}/search", dependencies=[Depends(_rate_limit)])
 async def search(key: str, selfie: UploadFile = File(...)):
     """Selfie -> two-tier photo list. The embedding never leaves this request."""
     con = db.connect()
@@ -245,7 +315,7 @@ async def search(key: str, selfie: UploadFile = File(...)):
     return out
 
 
-@app.post("/api/galleries/{key}/recluster")
+@app.post("/api/galleries/{key}/recluster", dependencies=[Depends(require_admin)])
 def recluster(key: str):
     """Re-run clustering with the current thresholds.yaml — the tuning loop."""
     from . import config
@@ -258,7 +328,7 @@ def recluster(key: str):
     return {"people": n}
 
 
-@app.delete("/api/galleries/{key}")
+@app.delete("/api/galleries/{key}", dependencies=[Depends(require_admin)])
 def delete(key: str):
     """The only way an index is ever removed: an explicit request."""
     con = db.connect()
@@ -340,7 +410,7 @@ def _selfie_embedding(data: bytes):
     return found
 
 
-@app.post("/api/collections")
+@app.post("/api/collections", dependencies=[Depends(require_admin)])
 def create_collection(body: CollectionBody):
     if not body.name.strip():
         raise HTTPException(400, {"error_code": "INVALID", "message": "Give the collection a name."})
@@ -356,7 +426,7 @@ def create_collection(body: CollectionBody):
     return out
 
 
-@app.get("/api/collections")
+@app.get("/api/collections", dependencies=[Depends(require_admin)])
 def list_collections():
     con = db.connect()
     rows = con.execute("SELECT id FROM collections ORDER BY created_at DESC").fetchall()
@@ -373,7 +443,7 @@ def collection(key: str):
     return c
 
 
-@app.patch("/api/collections/{key}")
+@app.patch("/api/collections/{key}", dependencies=[Depends(require_admin)])
 def patch_collection(key: str, body: CollectionPatch):
     """Rename a collection or change its link name. The old link stops working."""
     con = db.connect()
@@ -391,7 +461,7 @@ def patch_collection(key: str, body: CollectionPatch):
     return out
 
 
-@app.post("/api/collections/{key}/sources")
+@app.post("/api/collections/{key}/sources", dependencies=[Depends(require_admin)])
 def add_collection_source(key: str, body: SourceBody):
     con = db.connect()
     c = _collection_or_404(con, key)
@@ -404,7 +474,7 @@ def add_collection_source(key: str, body: SourceBody):
     return out
 
 
-@app.delete("/api/collections/{key}/sources/{gallery}")
+@app.delete("/api/collections/{key}/sources/{gallery}", dependencies=[Depends(require_admin)])
 def remove_collection_source(key: str, gallery: str):
     con = db.connect()
     c = _collection_or_404(con, key)
@@ -414,7 +484,7 @@ def remove_collection_source(key: str, gallery: str):
     return out
 
 
-@app.post("/api/collections/{key}/regroup")
+@app.post("/api/collections/{key}/regroup", dependencies=[Depends(require_admin)])
 def regroup_collection(key: str):
     from . import config
     config.cfg = config.load()
@@ -457,7 +527,7 @@ def collection_person_photos(key: str, ccid: str):
     return {"person": dict(person), "photos": _with_thumbs([dict(r) for r in rows])}
 
 
-@app.post("/api/collections/{key}/search")
+@app.post("/api/collections/{key}/search", dependencies=[Depends(_rate_limit)])
 async def collection_search(key: str, selfie: UploadFile = File(...)):
     """Selfie against the pooled faces of every source. Results carry their source."""
     con = db.connect()
@@ -481,3 +551,52 @@ async def collection_search(key: str, selfie: UploadFile = File(...)):
     out["confident"], out["possible"] = _with_thumbs(out["confident"]), _with_thumbs(out["possible"])
     out["faces_in_selfie"] = len(found)
     return out
+
+
+# ---------------------------------------------------------------- publish (hosted)
+@app.post("/api/admin/import", dependencies=[Depends(require_admin)])
+async def import_data(bundle: UploadFile = File(...)):
+    """Replace this server's index with a bundle from publish.sh: faces.db + crops/.
+    Written to a temp dir, validated, then swapped in atomically. Existing data
+    is kept as data.prev until the next import, so a bad publish is one rename away."""
+    tmp = Path(tempfile.mkdtemp(prefix="faces-import-", dir=DATA.parent))
+    try:
+        bundle_path = tmp / "bundle.tar.gz"
+        with open(bundle_path, "wb") as f:
+            while chunk := await bundle.read(1 << 20):
+                f.write(chunk)
+        with tarfile.open(bundle_path) as tar:
+            members = tar.getmembers()
+            for m in members:                         # no path escapes, no links
+                if m.name.startswith(("/", "..")) or ".." in Path(m.name).parts or m.issym() or m.islnk():
+                    raise HTTPException(400, {"error_code": "BAD_BUNDLE", "message": f"unsafe path: {m.name}"})
+            names = {m.name for m in members}
+            if "faces.db" not in names:
+                raise HTTPException(400, {"error_code": "BAD_BUNDLE", "message": "bundle has no faces.db"})
+            tar.extractall(tmp / "data")
+        # sanity: it must open and have the tables we expect
+        import sqlite3
+        con = sqlite3.connect(tmp / "data" / "faces.db")
+        n_g = con.execute("SELECT COUNT(*) FROM galleries").fetchone()[0]
+        n_c = con.execute("SELECT COUNT(*) FROM collections").fetchone()[0]
+        n_f = con.execute("SELECT COUNT(*) FROM faces").fetchone()[0]
+        con.close()
+        # swap: keep models (big, unchanged) in place; replace db + crops
+        with pipeline._infer_lock:                    # no search mid-swap
+            prev = DATA.parent / "data.prev"
+            shutil.rmtree(prev, ignore_errors=True)
+            prev.mkdir()
+            for name in ("faces.db", "faces.db-wal", "faces.db-shm", "crops"):
+                src = DATA / name
+                if src.exists():
+                    shutil.move(str(src), str(prev / name))
+            shutil.move(str(tmp / "data" / "faces.db"), str(DB_PATH))
+            if (tmp / "data" / "crops").exists():
+                shutil.move(str(tmp / "data" / "crops"), str(CROPS))
+            CROPS.mkdir(parents=True, exist_ok=True)
+            _pools.clear()
+        db.init()
+        log.info("imported bundle: %d galleries, %d collections, %d faces", n_g, n_c, n_f)
+        return {"galleries": n_g, "collections": n_c, "faces": n_f}
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)

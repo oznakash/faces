@@ -194,7 +194,7 @@ v1 ships when **every** item below is true. These are binary, not aspirational.
 - [ ] **D14** A privacy notice explains, in plain language, what is processed, where it goes, and how long it lives — shown before the first upload, not buried.
 - [ ] **D15** A takedown path exists for gallery owners and for individuals, with a documented SLA.
 - [ ] **D16** Ingestion is user-directed and page-scoped: it loads only the page the user pasted (plus the images it displays and, when needed, each photo's own page), never crawls a site, never bypasses a bot challenge or login, and never mirrors source images. This posture is documented and honest about the trade-off it makes (Tech Spec §3.3).
-- [ ] **D17** Rate limiting and an abuse policy are live: per-IP and per-domain caps, and a denylist for domains we will not index.
+- [ ] **D17** Rate limiting and an abuse policy are live: per-IP caps on selfie search (hosted: 20/min, burst 8 — built), per-domain caps and a denylist for indexing (hosted indexing is off; local only).
 
 ### Operational
 

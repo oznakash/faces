@@ -1,8 +1,10 @@
 from pathlib import Path
 import yaml
 
+import os
+
 ROOT = Path(__file__).resolve().parent.parent
-DATA = ROOT / "data"
+DATA = Path(os.environ.get("FACES_DATA", ROOT / "data"))   # hosted: the persistent volume, e.g. /data
 CROPS = DATA / "crops"
 DB_PATH = DATA / "faces.db"
 MODELS = DATA / "models"

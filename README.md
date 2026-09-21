@@ -59,6 +59,24 @@ Then open <http://localhost:8000>, paste a gallery URL, and watch the wall fill 
 
 On an M1 Pro, expect ~1.2 s per image on CPU; a 1,000-image gallery is roughly 20 minutes. Faces stream in as they're found, so the wall is usable long before the run finishes.
 
+## Hosting (search only)
+
+The hosted profile is a **search box, not an indexer**: galleries are indexed on your machine and published to the server. Nothing in the repo contains photos or face data.
+
+1. Deploy the repo as a container (there's a `Dockerfile`; no Playwright, no Chromium). Mount a persistent volume at **`/data`**, expose port **8000**, and set:
+   - `FACES_ADMIN_TOKEN` — a long random secret; every write route and `/admin` require it
+   - `FACES_STANDALONE=iia-summit-2026` — the one collection `/` shows
+   - (indexing stays off unless `FACES_ALLOW_INDEX=1`)
+2. First start downloads the face models (~280 MB) into `/data/models`. Until something is published, `/` shows a plain "nothing here yet".
+3. From your machine, publish the index:
+   ```bash
+   FACES_ADMIN_TOKEN=… ./publish.sh https://faces.example.com
+   ```
+   That bundles `data/faces.db` + `data/crops/` (~150 MB for four galleries), uploads it over HTTPS, and the server swaps it in atomically — the previous index is kept as `data.prev` until the next publish. Re-run it whenever you index or regroup locally. No redeploy.
+4. Your admin page on the server is `/admin?token=<the token>` — entered once, remembered by that browser only.
+
+Selfie search is rate-limited per IP (20/min, burst 8). The originals are never copied: tiles and full photos load from the source gallery in the visitor's browser.
+
 ## Documentation
 
 | Doc | What's in it |

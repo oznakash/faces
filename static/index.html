@@ -191,6 +191,17 @@
 <script>
 const $ = s => document.querySelector(s);
 let ctx = null, es = null;              // ctx: what the page is showing (a gallery or a collection)
+// ---------- hosted mode: admin calls carry a token. Enter it once via /admin?token=… (kept in this browser only).
+const _tok = new URLSearchParams(location.search).get('token');
+if (_tok) { try { localStorage.setItem('faces_admin_token', _tok); } catch(_){} history.replaceState(null, '', location.pathname); }
+let adminToken = null; try { adminToken = localStorage.getItem('faces_admin_token'); } catch(_){}
+const _fetch = window.fetch;
+window.fetch = (url, opts = {}) => {
+  if (adminToken && String(url).startsWith('/api/') && !/\/search$/.test(String(url)))
+    opts = {...opts, headers: {...(opts.headers || {}), Authorization: `Bearer ${adminToken}`}};
+  return _fetch(url, opts);
+};
+let serverCfg = {hosted:false, allow_index:true};
 const fmt = n => (n ?? 0).toLocaleString();
 const esc = t => String(t ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 function pill(text, cls){ return `<span class="pill ${cls||''}">${esc(text)}</span>`; }
@@ -200,7 +211,13 @@ function show(sel, on){ $(sel).classList.toggle('hidden', !on); }
 
 // ---------- home
 async function loadHome(){
+  try { serverCfg = await (await fetch('/api/config')).json(); } catch(_){}
+  show('#f', serverCfg.allow_index);
   const [gr, cr] = await Promise.all([fetch('/api/galleries'), fetch('/api/collections')]);
+  if (gr.status === 401 || cr.status === 401) {
+    $('#list').innerHTML = ''; $('#colls').innerHTML = `<div class="empty">This server needs the admin token. Open <code>/admin?token=…</code> once and it's remembered in this browser.</div>`;
+    $('#collPick').innerHTML = ''; return;
+  }
   const galleries = await gr.json(), colls = await cr.json();
   $('#listCount').textContent = galleries.length ? `${galleries.length} · each has a short link you can share` : '';
   $('#list').innerHTML = galleries.length ? galleries.map(g => `
