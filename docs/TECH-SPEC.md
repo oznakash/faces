@@ -418,7 +418,18 @@ Completeness: the harvester reads the page's own reported total where one exists
 | People | 210 clusters; largest 142 / 115 / 114 / 103 photos; 34 singletons |
 | Clustered | 2,386 of 2,612 usable faces (226 dropped as low-quality singletons) |
 
-Two readings. First, **72% of detections are background crowd** — faces under 40 px even at 1600 px. That is the nature of reception photography, not a bug, and it is why the exclusion is counted rather than hidden. Second, the cluster-size curve (142, 115, 114, 103, 80…) is the shape you'd expect of an event — a handful of hosts and speakers, then a long tail — which is weak but real evidence that clustering is not wildly over-merging. Whether it's over-*splitting* needs the eval set (§7); the wall is the fastest way to eyeball it.
+**Second full run, portrait fixture (FIX-2), same machine, same thresholds:**
+
+| | |
+|---|---|
+| Images | 1,834 of 1,834, 0 failed — status `ready` |
+| Wall clock | 11.1 min (faster than the smaller candid set: ~1.2 faces/image to embed instead of ~9) |
+| Detections | 2,257 faces → 2,251 usable; excluded: 4 `too_small`, 2 `low_score`, 0 `blurry` |
+| People | 251 clusters; largest 90 / 37 / 36 / 36; 10 singletons |
+
+The contrast is the point of having two fixtures. On posed portraits **99.7% of detections are usable**, versus 25% on the candid set — same model, same thresholds, same 1600 px upgrade. The quality filter is doing what it should: it is the photographs that differ, not the pipeline. The portrait set's flatter cluster curve (90, then 37, 36, 36…) is also what a "one portrait session per attendee" gallery should look like; the 90-photo outlier is worth a look on the wall.
+
+Two readings of the candid set. First, **72% of detections are background crowd** — faces under 40 px even at 1600 px. That is the nature of reception photography, not a bug, and it is why the exclusion is counted rather than hidden. Second, the cluster-size curve (142, 115, 114, 103, 80…) is the shape you'd expect of an event — a handful of hosts and speakers, then a long tail — which is weak but real evidence that clustering is not wildly over-merging. Whether it's over-*splitting* needs the eval set (§7); the wall is the fastest way to eyeball it.
 
 **The tuning loop.** `POST /api/galleries/{id}/recluster` re-reads `config/thresholds.yaml` and re-clusters without re-indexing, so threshold changes take seconds to evaluate, not twenty minutes. This is how `t_link` / `t_merge` / `t_hit` get calibrated once the eval set exists (§7).
 
