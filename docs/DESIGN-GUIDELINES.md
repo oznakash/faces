@@ -106,7 +106,7 @@ Opacity and border-color only, 120ms ease. No transforms, no lifts. A tile shows
 
 **Label (pill).** 11px uppercase, letter-spacing .08em, 1px hairline, 3px 8px padding, 0 radius, `--ink-2` text. Variants change *text only*, not color — except `danger`, which uses `--danger` text for real failures.
 
-**Finder (Find me).** One bordered `--surface` block: a one-line explanation, then two 44px buttons — **Take a selfie** (primary, opens the front camera on phones via `capture="user"`) and **Choose a photo** (secondary, `--surface-2` with a hairline). After a search: the preview thumbnail, a plain result sentence ("Found you in 44 photos · 3 possible"), and a text button *Search another photo*. On phones the block stacks and both buttons go full width. Errors are a sentence that says what to do.
+**Finder (Find me).** One bordered `--surface` block: a one-line explanation and a single 44px **Upload a selfie** button. The whole block accepts a dropped file on desktop (the hint is hidden on touch). No camera capture — the OS picker is the only way in, so the person chooses a photo they already have. After a search: the preview thumbnail, a plain result sentence ("Found you in 44 photos · 3 possible"), and a text button *Search another photo*. On phones the block stacks and both buttons go full width. Errors are a sentence that says what to do.
 
 **Progress.** 2px bar in `--accent` on a `--hair` track, full content width. Counts beside it in `--ink-2`. Never a spinner.
 

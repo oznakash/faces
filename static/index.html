@@ -86,6 +86,7 @@
   .btn.alt{background:var(--surface-2);color:var(--ink);border:1px solid var(--hair-2)}
   .btn.alt:hover{background:var(--surface-2);border-color:var(--accent)}
   .found{font-size:13px;color:var(--ink)}
+  @media (hover:none){ .dragHint{display:none} }
   .hidden{display:none!important}
   .privacy{font-size:12px;color:var(--ink-2);margin-top:8px}
 
@@ -160,10 +161,9 @@
     <div class="finder" id="drop">
       <img id="selfiePreview" class="hidden" alt="">
       <div class="finder-body">
-        <p id="dropText">Take a selfie or choose a photo of yourself. It's matched in memory and never stored.</p>
+        <p id="dropText">Upload a selfie or any clear photo of yourself<span class="dragHint">, or drop it here</span>. It's matched in memory and never stored.</p>
         <div class="row" id="finderButtons">
-          <label class="btn"><input id="selfieCam" type="file" accept="image/*" capture="user" class="hidden">Take a selfie</label>
-          <label class="btn alt"><input id="selfie" type="file" accept="image/*" class="hidden">Choose a photo</label>
+          <label class="btn"><input id="selfie" type="file" accept="image/*" class="hidden">Upload a selfie</label>
         </div>
         <div class="row hidden" id="finderDone"><span class="found" id="foundText"></span><button class="ghost" id="searchReset">Search another photo</button></div>
       </div>
@@ -384,11 +384,10 @@ async function runSearch(file){
 function resetSearch(){
   if (previewUrl) URL.revokeObjectURL(previewUrl); previewUrl = null;
   show('#selfiePreview', false); show('#finderDone', false); show('#finderButtons', true);
-  $('#dropText').textContent = "Take a selfie or choose a photo of yourself. It's matched in memory and never stored.";
-  $('#results').innerHTML = ''; $('#selfie').value = ''; $('#selfieCam').value = '';
+  $('#dropText').innerHTML = 'Upload a selfie or any clear photo of yourself<span class="dragHint">, or drop it here</span>. It\'s matched in memory and never stored.';
+  $('#results').innerHTML = ''; $('#selfie').value = '';
 }
 $('#selfie').onchange = () => runSearch($('#selfie').files[0]);
-$('#selfieCam').onchange = () => runSearch($('#selfieCam').files[0]);
 $('#searchReset').onclick = resetSearch;
 const drop = $('#drop');
 drop.ondragover = e => { e.preventDefault(); drop.classList.add('over'); };
