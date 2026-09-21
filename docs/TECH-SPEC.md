@@ -482,6 +482,8 @@ The hosted deployment is the local profile minus indexing: FastAPI + the models 
 | Public writes | — | only selfie search, per-IP token bucket (20/min, burst 8), `Retry-After` on 429 |
 | Image | — | `python:3.12-slim`, ~1 GB with models cached on the volume; needs ~1.5 GB RAM for the model |
 
+**Query speed on a small container.** The first hosted searches took 9–12 s against 1 s on the development laptop. Three fixes, none touching the index: (1) selfies are detected at **640 px**, not 1024 — a selfie's face is huge, and detector cost scales with pixels; (2) the query's padding ladder tries the **padded frame first** (`0.5, 0, 1.25`), because an unpadded selfie almost always fails and that failed pass was pure waste; only the largest face is embedded; (3) ONNX Runtime threads are **capped to the cgroup CPU quota** — in a container `os.cpu_count()` reports the host's cores, and dozens of threads on a 1–2 CPU quota fight each other (`FACES_THREADS` overrides). Alignment and the ArcFace embedding are unchanged, so query and index vectors remain comparable: locally 1.0 s → 0.31 s with the same confident matches.
+
 **Why publish-from-local instead of index-on-server.** Indexing needs a headless browser and 15–30 minutes of CPU per gallery; a shared container is the wrong place for it, and it would put the crawl's egress on the host's IP. Publishing a finished index is a 150 MB upload that takes a minute.
 
 **Why the bundle is never in the repo or a release.** `faces.db` holds the embeddings — biometric identifiers under GDPR Art. 9 / BIPA. They travel operator → server over HTTPS behind the admin token and nowhere else. Source photos are never copied anywhere; the page hotlinks them.
