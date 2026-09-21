@@ -89,6 +89,12 @@
   .g .copy{font-size:12px;background:transparent;border:0;padding:0;color:var(--ink)}
   .g .copy:hover{text-decoration:underline}
   .back{margin:0 0 18px;font-size:13px}
+  footer{border-top:1px solid var(--hair)}
+  footer .in{max-width:1200px;margin:0 auto;padding:18px 24px;font-size:12px;color:var(--ink-2);display:flex;gap:14px;align-items:center;flex-wrap:wrap}
+  footer a{color:var(--ink-2);text-decoration:none;display:inline-flex;align-items:center;gap:6px}
+  footer a:hover{color:var(--ink);text-decoration:underline}
+  footer svg{width:14px;height:14px;fill:currentColor;display:block}
+  @media (max-width:600px){ footer .in{padding:14px 16px} }
   .src{display:grid;grid-template-columns:1fr auto;gap:2px 16px;align-items:center;border-top:1px solid var(--hair);padding:10px 0}
   .src:last-child{border-bottom:1px solid var(--hair)}
   .src .t a{text-decoration:none} .src .t a:hover{text-decoration:underline}
@@ -159,6 +165,13 @@
     <div class="photos" id="photos"></div>
   </section>
 </main>
+<footer><div class="in">
+  <span>Created by Oz Nakash</span>
+  <a href="https://linkedin.com/in/oznakash" target="_blank" rel="noopener" aria-label="Oz Nakash on LinkedIn" title="LinkedIn">
+    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20.45 20.45h-3.55v-5.57c0-1.33-.03-3.04-1.85-3.04-1.85 0-2.14 1.45-2.14 2.94v5.67H9.36V9h3.41v1.56h.05c.47-.9 1.63-1.85 3.36-1.85 3.6 0 4.27 2.37 4.27 5.45v6.29zM5.34 7.43a2.06 2.06 0 1 1 0-4.12 2.06 2.06 0 0 1 0 4.12zM7.12 20.45H3.56V9h3.56v11.45zM22.22 0H1.77C.79 0 0 .77 0 1.73v20.54C0 23.23.79 24 1.77 24h20.45c.98 0 1.78-.77 1.78-1.73V1.73C24 .77 23.2 0 22.22 0z"/></svg>
+  </a>
+  <a href="https://oznakash.com" target="_blank" rel="noopener">oznakash.com</a>
+</div></footer>
 <script>
 const $ = s => document.querySelector(s);
 let ctx = null, es = null;              // ctx: what the page is showing (a gallery or a collection)

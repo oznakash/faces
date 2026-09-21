@@ -115,6 +115,8 @@ Opacity and border-color only, 120ms ease. No transforms, no lifts. A tile shows
 
 **Gallery row.** `--surface`, hairline border, 14px 16px padding. Title in `--ink`, URL and meta in `--ink-2`, short link in a hairline-boxed `code` on the right with a text-button *Copy link*.
 
+**Footer.** A hairline above, 12px `--ink-2`: "Created by Oz Nakash", a 14px LinkedIn glyph in `currentColor`, and `oznakash.com`. Links go `--ink` on hover. It is the quietest thing on the page and the only place a credit appears.
+
 **Empty / error.** Plain sentence in `--ink-2`, centered, 40px padding. Errors use `--danger` text and say what to do next.
 
 **Source row (collections).** Hairline-separated rows, no background: gallery title as a link to its Faces page, its origin URL beneath in `--ink-2` opening in a new tab, counts right-aligned. Reads as a caption list, not a card list.
