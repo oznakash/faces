@@ -115,6 +115,10 @@ Opacity and border-color only, 120ms ease. No transforms, no lifts. A tile shows
 
 **Empty / error.** Plain sentence in `--ink-2`, centered, 40px padding. Errors use `--danger` text and say what to do next.
 
+**Source row (collections).** Hairline-separated rows, no background: gallery title as a link to its Faces page, its origin URL beneath in `--ink-2` opening in a new tab, counts right-aligned. Reads as a caption list, not a card list.
+
+**Sub-head (h3).** 13px uppercase, letter-spacing .06em, `--ink-2`. Used only to group photos by source inside a collection.
+
 ---
 
 ## 5. Do / don't

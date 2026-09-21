@@ -14,7 +14,7 @@ from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from . import cluster, db, models, pipeline
+from . import cluster, collections, db, models, pipeline
 from .config import CROPS, ROOT, cfg
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(message)s")
@@ -60,6 +60,12 @@ def index():
 @app.get("/g/{slug}")
 def gallery_page(slug: str):
     """Shareable short link — same page, opened straight to this gallery's face wall."""
+    return FileResponse(INDEX, headers=NO_CACHE)
+
+
+@app.get("/c/{slug}")
+def collection_page(slug: str):
+    """A collection's shareable link: pooled face wall + selfie search, no indexing."""
     return FileResponse(INDEX, headers=NO_CACHE)
 
 
@@ -219,3 +225,173 @@ def delete(key: str):
     con.close()
     pipeline.delete(gid)
     return {"deleted": gid}
+
+
+# ---------------------------------------------------------------- collections
+class CollectionBody(BaseModel):
+    name: str
+    galleries: list[str] = []
+
+
+class SourceBody(BaseModel):
+    gallery: str
+
+
+def _collection_or_404(con, key: str) -> dict:
+    c = collections.get(con, key)
+    if not c:
+        raise HTTPException(404, {"error_code": "NOT_FOUND", "message": "No collection at that link."})
+    c["short_url"] = f"/c/{c['slug']}"
+    c["sources"] = collections.sources(con, c["id"])
+    c["people"] = con.execute("SELECT COUNT(*) FROM collection_clusters WHERE collection_id=?",
+                              (c["id"],)).fetchone()[0]
+    c["faces"] = con.execute("SELECT COUNT(*) FROM collection_faces WHERE collection_id=?",
+                             (c["id"],)).fetchone()[0]
+    return c
+
+
+def _selfie_embedding(data: bytes):
+    if len(data) > 10 * 1024 * 1024:
+        raise HTTPException(413, {"error_code": "TOO_LARGE", "message": "Max 10 MB."})
+    arr = cv2.imdecode(np.frombuffer(data, np.uint8), cv2.IMREAD_COLOR)
+    if arr is None:
+        raise HTTPException(400, {"error_code": "NOT_AN_IMAGE", "message": "Couldn't read that image."})
+    with pipeline._infer_lock:
+        found = models.embed_query(arr)
+    if not found:
+        raise HTTPException(422, {"error_code": "NO_FACE_DETECTED",
+                                  "message": "We couldn't find a face in that photo. Try a clearer, front-facing shot."})
+    return found
+
+
+@app.post("/api/collections")
+def create_collection(body: CollectionBody):
+    if not body.name.strip():
+        raise HTTPException(400, {"error_code": "INVALID", "message": "Give the collection a name."})
+    con = db.connect()
+    try:
+        c = collections.create(con, body.name, body.galleries)
+    except KeyError as e:
+        raise HTTPException(404, {"error_code": "NOT_FOUND", "message": str(e)})
+    out = _collection_or_404(con, c["id"])
+    con.close()
+    return out
+
+
+@app.get("/api/collections")
+def list_collections():
+    con = db.connect()
+    rows = con.execute("SELECT id FROM collections ORDER BY created_at DESC").fetchall()
+    out = [_collection_or_404(con, r["id"]) for r in rows]
+    con.close()
+    return out
+
+
+@app.get("/api/collections/{key}")
+def collection(key: str):
+    con = db.connect()
+    c = _collection_or_404(con, key)
+    con.close()
+    return c
+
+
+@app.post("/api/collections/{key}/sources")
+def add_collection_source(key: str, body: SourceBody):
+    con = db.connect()
+    c = _collection_or_404(con, key)
+    try:
+        collections.add_source(con, c["id"], body.gallery)
+    except KeyError as e:
+        raise HTTPException(404, {"error_code": "NOT_FOUND", "message": str(e)})
+    out = _collection_or_404(con, c["id"])
+    con.close()
+    return out
+
+
+@app.delete("/api/collections/{key}/sources/{gallery}")
+def remove_collection_source(key: str, gallery: str):
+    con = db.connect()
+    c = _collection_or_404(con, key)
+    collections.remove_source(con, c["id"], gallery)
+    out = _collection_or_404(con, c["id"])
+    con.close()
+    return out
+
+
+@app.post("/api/collections/{key}/regroup")
+def regroup_collection(key: str):
+    from . import config
+    config.cfg = config.load()
+    cluster.cfg = config.cfg
+    con = db.connect()
+    c = _collection_or_404(con, key)
+    n = collections.regroup(con, c["id"])
+    con.close()
+    return {"people": n}
+
+
+@app.get("/api/collections/{key}/people")
+def collection_people(key: str):
+    con = db.connect()
+    c = _collection_or_404(con, key)
+    rows = con.execute(
+        "SELECT cc.id, cc.label, cc.face_count, cc.image_count, cc.source_count, f.crop_key, g.slug AS rep_source"
+        " FROM collection_clusters cc LEFT JOIN faces f ON f.id=cc.rep_face_id"
+        " LEFT JOIN galleries g ON g.id=f.gallery_id"
+        " WHERE cc.collection_id=? ORDER BY cc.image_count DESC, cc.face_count DESC", (c["id"],)).fetchall()
+    con.close()
+    return [{**dict(r), "crop_url": f"/crops/{r['crop_key']}" if r["crop_key"] else None} for r in rows]
+
+
+@app.get("/api/collections/{key}/people/{ccid}/photos")
+def collection_person_photos(key: str, ccid: str):
+    con = db.connect()
+    c = _collection_or_404(con, key)
+    person = con.execute("SELECT * FROM collection_clusters WHERE id=? AND collection_id=?",
+                         (ccid, c["id"])).fetchone()
+    if not person:
+        raise HTTPException(404, {"error_code": "NOT_FOUND", "message": "person not found"})
+    rows = con.execute(
+        "SELECT i.id, i.source_url, i.page_url, MAX(f.det_score) AS score,"
+        "       g.slug AS source_slug, g.title AS source_title, g.url_canonical AS source_url_page"
+        " FROM collection_faces cf JOIN faces f ON f.id=cf.face_id"
+        " JOIN images i ON i.id=f.image_id JOIN galleries g ON g.id=i.gallery_id"
+        " WHERE cf.cluster_id=? GROUP BY i.id ORDER BY g.id, score DESC", (ccid,)).fetchall()
+    con.close()
+    return {"person": dict(person), "photos": [dict(r) for r in rows]}
+
+
+@app.post("/api/collections/{key}/search")
+async def collection_search(key: str, selfie: UploadFile = File(...)):
+    """Selfie against the pooled faces of every source. Results carry their source."""
+    con = db.connect()
+    c = _collection_or_404(con, key)
+    found = _selfie_embedding(await selfie.read())
+    q = found[0]["embedding"]
+    ids, mat = collections.load_embeddings(con, c["id"])
+    if not ids:
+        con.close()
+        return {"confident": [], "possible": [], "faces_in_selfie": len(found)}
+    sims = mat @ (q / (np.linalg.norm(q) + 1e-9))
+    meta = {r["id"]: dict(r) for r in con.execute(
+        "SELECT f.id, f.image_id, i.source_url, i.page_url, g.slug AS source_slug, g.title AS source_title"
+        " FROM faces f JOIN images i ON i.id=f.image_id JOIN galleries g ON g.id=i.gallery_id"
+        " JOIN collection_sources s ON s.gallery_id=g.id"
+        " WHERE s.collection_id=? AND f.embedding IS NOT NULL", (c["id"],))}
+    con.close()
+    best: dict[str, dict] = {}
+    for fid, sim in zip(ids, sims):
+        sim = float(sim)
+        if sim < cfg.search.t_possible:
+            continue
+        m = meta[fid]
+        cur = best.get(m["image_id"])
+        if cur is None or sim > cur["score"]:
+            best[m["image_id"]] = {**m, "score": round(sim, 3)}
+    ranked = sorted(best.values(), key=lambda r: -r["score"])
+    return {
+        "confident": [r for r in ranked if r["score"] >= cfg.search.t_hit],
+        "possible": [r for r in ranked if r["score"] < cfg.search.t_hit],
+        "faces_in_selfie": len(found),
+        "thresholds": {"t_hit": cfg.search.t_hit, "t_possible": cfg.search.t_possible},
+    }

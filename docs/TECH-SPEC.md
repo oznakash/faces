@@ -319,6 +319,11 @@ All app routes are Next.js route handlers; the worker is reachable only from the
 | `POST` | `/api/galleries/:id/search` | `multipart` selfie → `{confident:[], possible:[], query_id}` |
 | `POST` | `/api/galleries/:id/search/select-face` | Disambiguates a multi-face selfie (T-C3) |
 | `DELETE` | `/api/galleries/:id` | Immediate deletion of index, crops, embeddings (D13/T-D3) |
+| `GET` | `/c/:slug` | A **collection's** shareable link: sources, pooled face wall, selfie search — no indexing |
+| `POST` `GET` | `/api/collections`, `/api/collections/:key` | Create (name + gallery keys) / read, with sources and counts |
+| `POST` `DELETE` | `/api/collections/:key/sources[/:gallery]` | Add or remove a source; regroups the pool |
+| `GET` | `/api/collections/:key/people`, `…/people/:id/photos` | Pooled people; a person's photos across sources, each labeled |
+| `POST` | `/api/collections/:key/search` | Selfie against the pooled faces; results carry their source |
 | `POST` | `/api/share` | Creates a stable share link for a selected photo set (D7) |
 
 **Errors** are `{error_code, message, retry_after?}` with machine-readable codes — `ROBOTS_DISALLOWED`, `GALLERY_PROTECTED`, `NO_IMAGES_FOUND`, `NO_FACE_DETECTED`, `RATE_LIMITED`, `COST_CEILING`, `SOURCE_UNAVAILABLE` — each mapped to a specific user-facing sentence (D19/T-E6).
@@ -438,3 +443,21 @@ Two readings of the candid set. First, **72% of detections are background crowd*
 **Persistence.** The local profile has no expiry: `expires_at` is NULL and there is no sweeper, so an index lives until the user deletes it (production keeps its 30-day TTL per PRD D13 — that is a hosted-service concern, not a local one). Jobs are resumable: the manifest is written to `images` before any processing, each image is marked `done`/`failed` as it completes, and a job restarted for any reason processes only what is still `pending`. On startup the server resumes any job the previous process left mid-flight, and re-submitting a failed URL resumes it rather than wiping it.
 
 **Deliberately not built yet:** rate limits, denylist, cost ceiling, TTL sweeper, per-selection share links — all P3, all meaningless for a single-user local process. The privacy *architecture* is already in place: no selfie is ever written (the embedding lives only inside the search request), clusters are anonymous, and `DELETE /api/galleries/{id}` removes the index and its crops.
+
+---
+
+## 16. Collections (pooling galleries)
+
+A collection is a named, ordered set of indexed galleries presented as **one set of people** at `/c/{slug}`. It exists for the common case where one event is published as several galleries — a reception, the portraits, the keynote — and a person wants to search all of them at once.
+
+**What it is not.** A collection never indexes. It holds no faces of its own: `collection_faces` maps existing `faces` rows to `collection_clusters`, and a source can be added or removed without touching any gallery. Deleting a gallery cascades out of every collection it was in.
+
+**Grouping.** On create, and whenever a source changes, the pooled embeddings of every source are re-clustered with the *same* algorithm and thresholds as a single gallery (§5). A person present in three galleries therefore becomes one tile. Cost is a few seconds for ~5k faces — the reason regrouping can be casual.
+
+**Lead thumbnail — "sharpest face wins, any source."** Each pooled person's tile uses the face with the highest `0.4·det_score + 0.3·min(1, short_edge/160) + 0.3·min(1, blur_var/200)`. Each term is capped so a large but soft candid can't outscore a clean portrait; in practice the portrait galleries win almost every tile, which is the intent, without hard-coding a source preference.
+
+**Results carry their source.** Every photo in a person view or a selfie result names the gallery it came from, and the UI groups photos under those names. The sources list at the top of the page links both to each gallery's Faces page and to its origin URL.
+
+**First collection, FIX-1 + FIX-2 pooled (4,652 faces), default thresholds:** 373 people, of whom **106 appear in both galleries** (461 per-gallery clusters → 373 pooled). Lead thumbnails: 246 from the portrait gallery, 127 from the candid one — and among the 106 cross-gallery people, **102 lead with a portrait**. The largest pooled person (234 photos) is the 142-photo reception person and the 90-photo portrait outlier combined: a host, and a useful sanity check that the two galleries' clusters line up. Regrouping takes ~3 s.
+
+**Privacy posture is unchanged.** Pooling widens what one selfie can be matched against, which is exactly why a collection is an explicit, named, user-created thing rather than a default — nothing is ever searched across galleries that nobody grouped.

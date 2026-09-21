@@ -86,6 +86,18 @@
   .g .copy{font-size:12px;background:transparent;border:0;padding:0;color:var(--ink)}
   .g .copy:hover{text-decoration:underline}
   .back{margin:0 0 18px;font-size:13px}
+  .src{display:grid;grid-template-columns:1fr auto;gap:2px 16px;align-items:center;border-top:1px solid var(--hair);padding:10px 0}
+  .src:last-child{border-bottom:1px solid var(--hair)}
+  .src .t a{text-decoration:none} .src .t a:hover{text-decoration:underline}
+  .src .u,.src .m{font-size:12px;color:var(--ink-2);grid-column:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .src .u a{color:var(--ink-2)} .src .r{grid-row:1/4;font-size:12px;color:var(--ink-2);text-align:right}
+  h3{font-size:13px;font-weight:400;color:var(--ink-2);margin:18px 0 8px;letter-spacing:.06em;text-transform:uppercase}
+  .row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+  input[type=text],select{font:inherit;padding:10px 12px;border:1px solid var(--hair-2);border-radius:0;background:var(--surface);color:var(--ink)}
+  input[type=text]:focus,select:focus{outline:none;border-color:var(--accent)}
+  .btn.sm{padding:10px 14px;font-size:13px}
+  .chk{font-size:13px;color:var(--ink-2);display:flex;gap:6px;align-items:center;margin:4px 0}
+  .g .srcs{font-size:12px;color:var(--ink-2);grid-column:1}
   @media (max-width:600px){ main{padding:24px 16px 60px} .top .in{padding:14px 16px} .g .link{grid-row:auto;align-items:flex-start} .g{grid-template-columns:1fr} }
 </style>
 </head>
@@ -101,7 +113,20 @@
     <input id="url" type="url" required placeholder="https://… a gallery page" autocomplete="off">
     <button id="go" type="submit" class="btn">Index gallery</button>
   </form>
-  <p class="back hidden" id="back"><button class="ghost" id="backBtn">&larr; All indexed galleries</button></p>
+  <p class="back hidden" id="back"><button class="ghost" id="backBtn">&larr; Home</button></p>
+
+  <section id="sourcesSec" class="hidden">
+    <h2>Sources <small id="sourcesCount"></small></h2>
+    <div id="sources"></div>
+  </section>
+
+  <section id="collSec">
+    <h2>Collections <small>several galleries pooled into one set of people — search only, no indexing</small></h2>
+    <div class="list" id="colls"></div>
+    <h3>New collection</h3>
+    <div class="row"><input type="text" id="collName" placeholder="Name, e.g. IIA AI Summit 2026"><button class="btn sm" id="collCreate">Create</button></div>
+    <div id="collPick"></div>
+  </section>
 
   <section id="listSec">
     <h2>Indexed galleries <small id="listCount"></small></h2>
@@ -133,152 +158,203 @@
 </main>
 <script>
 const $ = s => document.querySelector(s);
-let gid = null, es = null;
-
-// ---------- helpers
+let ctx = null, es = null;              // ctx: what the page is showing (a gallery or a collection)
 const fmt = n => (n ?? 0).toLocaleString();
-function pill(text, cls){ return `<span class="pill ${cls||''}">${text}</span>`; }
+const esc = t => String(t ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+function pill(text, cls){ return `<span class="pill ${cls||''}">${esc(text)}</span>`; }
 function setStatus(html){ $('#status').innerHTML = html; }
+function statusPill(st){ return st === 'ready' ? pill('ready','ok') : st === 'partial' ? pill('partial','warn') : st === 'failed' ? pill('failed','bad') : pill(st); }
+function show(sel, on){ $(sel).classList.toggle('hidden', !on); }
 
-// ---------- indexed galleries (home)
-async function loadGalleries(){
-  const r = await fetch('/api/galleries'); const list = await r.json();
-  $('#listCount').textContent = list.length ? `${list.length} · each has a short link you can share` : '';
-  $('#list').innerHTML = list.length ? list.map(g => {
-    const st = g.status === 'ready' ? pill('ready','ok') : g.status === 'partial' ? pill('partial','warn')
-             : g.status === 'failed' ? pill('failed','bad') : pill(g.status);
-    const when = g.indexed_at ? new Date(g.indexed_at).toLocaleDateString() : '';
-    return `<div class="g" data-key="${g.slug}">
-      <div class="t">${g.title || g.host}</div>
-      <div class="link"><code>${location.origin}/g/${g.slug}</code><button class="copy" data-slug="${g.slug}">Copy link</button></div>
-      <div class="u">${g.url_canonical}</div>
-      <div class="m">${st} ${fmt(g.people)} people · ${fmt(g.images_done)} photos · ${fmt(g.faces_found)} faces${when?` · ${when}`:''}</div>
-    </div>`; }).join('')
-    : `<div class="empty">Nothing indexed yet. Paste a gallery URL above.</div>`;
-  $('#list').querySelectorAll('.g').forEach(el => el.onclick = () => open(el.dataset.key));
-  $('#list').querySelectorAll('.copy').forEach(b => b.onclick = async e => {
+// ---------- home
+async function loadHome(){
+  const [gr, cr] = await Promise.all([fetch('/api/galleries'), fetch('/api/collections')]);
+  const galleries = await gr.json(), colls = await cr.json();
+  $('#listCount').textContent = galleries.length ? `${galleries.length} · each has a short link you can share` : '';
+  $('#list').innerHTML = galleries.length ? galleries.map(g => `
+    <div class="g" data-key="${g.slug}">
+      <div class="t">${esc(g.title || g.host)}</div>
+      <div class="link"><code>${location.origin}/g/${g.slug}</code><button class="copy" data-link="/g/${g.slug}">Copy link</button></div>
+      <div class="u">${esc(g.url_canonical)}</div>
+      <div class="m">${statusPill(g.status)} ${fmt(g.people)} people · ${fmt(g.images_done)} photos · ${fmt(g.faces_found)} faces${g.indexed_at?` · ${new Date(g.indexed_at).toLocaleDateString()}`:''}</div>
+    </div>`).join('') : `<div class="empty">Nothing indexed yet. Paste a gallery URL above.</div>`;
+  $('#list').querySelectorAll('.g').forEach(el => el.onclick = () => openGallery(el.dataset.key));
+
+  $('#colls').innerHTML = colls.length ? colls.map(c => {
+    const have = new Set(c.sources.map(s => s.id));
+    const opts = galleries.filter(g => !have.has(g.id) && g.status !== 'failed');
+    return `<div class="g" data-ckey="${c.slug}">
+      <div class="t">${esc(c.name)}</div>
+      <div class="link"><code>${location.origin}/c/${c.slug}</code><button class="copy" data-link="/c/${c.slug}">Copy link</button></div>
+      <div class="srcs">${c.sources.map(s => esc(s.title || s.host)).join(' · ') || 'no sources yet'}</div>
+      <div class="m">${fmt(c.people)} people · ${fmt(c.faces)} faces · ${c.sources.length} ${c.sources.length===1?'gallery':'galleries'}</div>
+      ${opts.length ? `<div class="row" style="grid-column:1;margin-top:6px"><select data-add="${c.slug}"><option value="">Add a gallery…</option>${opts.map(g=>`<option value="${g.slug}">${esc(g.title || g.host)}</option>`).join('')}</select></div>` : ''}
+    </div>`; }).join('') : `<div class="empty">No collections yet. Name one below and pick the galleries to pool.</div>`;
+  $('#colls').querySelectorAll('.g').forEach(el => el.onclick = e => { if (e.target.closest('select')) return; openCollection(el.dataset.ckey); });
+  $('#colls').querySelectorAll('select[data-add]').forEach(sel => sel.onchange = async e => {
+    e.stopPropagation(); if (!sel.value) return;
+    sel.disabled = true;
+    await fetch(`/api/collections/${sel.dataset.add}/sources`, {method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({gallery: sel.value})});
+    loadHome();
+  });
+  $('#collPick').innerHTML = galleries.filter(g => g.status !== 'failed').map(g =>
+    `<label class="chk"><input type="checkbox" value="${g.slug}"> ${esc(g.title || g.host)} <span>· ${fmt(g.people)} people</span></label>`).join('');
+  document.querySelectorAll('.copy').forEach(b => b.onclick = async e => {
     e.stopPropagation();
-    await navigator.clipboard.writeText(`${location.origin}/g/${b.dataset.slug}`);
+    await navigator.clipboard.writeText(location.origin + b.dataset.link);
     b.textContent = 'Copied'; setTimeout(() => b.textContent = 'Copy link', 1200);
   });
 }
+$('#collCreate').onclick = async () => {
+  const name = $('#collName').value.trim();
+  const galleries = [...document.querySelectorAll('#collPick input:checked')].map(i => i.value);
+  if (!name) { $('#collName').focus(); return; }
+  $('#collCreate').disabled = true;
+  const r = await fetch('/api/collections', {method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({name, galleries})});
+  $('#collCreate').disabled = false;
+  if (!r.ok) { const err = await r.json(); setStatus(pill(err.detail?.message || 'Error','bad')); return; }
+  const c = await r.json(); openCollection(c.slug);
+};
+
 function home(){
-  gid = null; if (es) es.close();
+  ctx = null; if (es) es.close();
   history.replaceState(null, '', '/');
   $('#pageTitle').textContent = 'Point it at a public photo gallery.';
   $('#pageSub').textContent = "See everyone who's in it. Find every photo you're in.";
-  ['#wallSec','#personSec','#search','#back'].forEach(x => $(x).classList.add('hidden'));
-  $('#listSec').classList.remove('hidden'); setStatus(''); $('#note').textContent = '';
-  loadGalleries();
+  ['#wallSec','#personSec','#search','#back','#sourcesSec'].forEach(x => show(x, false));
+  ['#f','#collSec','#listSec'].forEach(x => show(x, true));
+  setStatus(''); $('#note').textContent = ''; $('#results').innerHTML = '';
+  loadHome();
 }
-$('#backBtn').onclick = home;
-$('#mark').onclick = home; $('#navHome').onclick = home;
+$('#backBtn').onclick = home; $('#mark').onclick = home; $('#navHome').onclick = home;
 
-// ---------- submit
+function enterView(){
+  if (es) es.close();
+  ['#wallSec','#personSec','#search','#sourcesSec','#collSec','#listSec'].forEach(x => show(x, false));
+  show('#back', true);
+  $('#wall').innerHTML = ''; $('#results').innerHTML = ''; $('#note').textContent = ''; setStatus('');
+  $('#selfiePreview').classList.add('hidden'); $('#dropText').textContent = 'Drop a selfie here, or click to choose';
+}
+
+// ---------- submit a gallery
 $('#f').onsubmit = async e => {
   e.preventDefault();
   $('#go').disabled = true;
-  const r = await fetch('/api/galleries', {method:'POST', headers:{'content-type':'application/json'},
-    body: JSON.stringify({url: $('#url').value})});
+  const r = await fetch('/api/galleries', {method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({url: $('#url').value})});
   $('#go').disabled = false;
   if (!r.ok){ const err = await r.json(); setStatus(pill(err.detail?.message || 'Error','bad')); return; }
-  const {slug} = await r.json();
-  open(slug);
+  openGallery((await r.json()).slug);
 };
 
-// ---------- open a gallery: stream progress, then render
-async function open(key){
+// ---------- gallery view: streams progress, then renders
+async function openGallery(key){
   const gr = await fetch(`/api/galleries/${key}`);
   if (!gr.ok){ setStatus(pill('not found','bad') + " that link doesn't point at an indexed gallery"); return; }
   const g0 = await gr.json();
-  gid = g0.id; const id = gid;
+  enterView(); show('#f', true);
+  ctx = { kind:'gallery', id: g0.id, base: `/api/galleries/${g0.id}`, personUrl: cid => `/api/people/${cid}/photos` };
   history.replaceState(null, '', `/g/${g0.slug}`);
-  $('#listSec').classList.add('hidden'); $('#back').classList.remove('hidden');
-  if (es) es.close();
-  $('#wall').innerHTML = ''; $('#wallSec').classList.add('hidden');
-  $('#personSec').classList.add('hidden'); $('#search').classList.add('hidden');
-  $('#results').innerHTML = ''; $('#note').textContent = '';
-  es = new EventSource(`/api/galleries/${id}/events`);
+  $('#url').value = g0.url_canonical;
+  es = new EventSource(`${ctx.base}/events`);
   es.addEventListener('status', e => {
     const g = JSON.parse(e.data);
-    if (g.url_canonical) $('#url').value = g.url_canonical;
     if (g.title) { $('#pageTitle').textContent = g.title; $('#pageSub').textContent = g.url_canonical; }
     if (g.status === 'ingesting') setStatus(`${pill('opening gallery')} <span>scrolling the page to find every photo…</span>`);
-    if (g.notes) $('#note').textContent = g.notes.join(' · ');
-    if (g.message && !g.notes) $('#note').textContent = g.message;
+    if (g.notes) $('#note').textContent = g.notes.join(' · '); else if (g.message) $('#note').textContent = g.message;
   });
   es.addEventListener('progress', e => {
     const p = JSON.parse(e.data);
     if (p.phase === 'harvest'){ setStatus(`${pill('finding photos')} <span>${fmt(p.images_total)} found so far</span>`); return; }
     const pct = p.images_total ? Math.round(100*(p.images_done+p.images_failed)/p.images_total) : 0;
-    setStatus(`${pill('indexing')} <div class="bar"><i style="width:${pct}%"></i></div>
-      <span>${fmt(p.images_done)} / ${fmt(p.images_total)} photos · ${fmt(p.faces_found)} faces · ${p.elapsed}s</span>`);
+    setStatus(`${pill('indexing')} <div class="bar"><i style="width:${pct}%"></i></div><span>${fmt(p.images_done)} / ${fmt(p.images_total)} photos · ${fmt(p.faces_found)} faces · ${p.elapsed}s</span>`);
   });
-  es.addEventListener('clusters', e => { renderWall(JSON.parse(e.data).provisional); });
+  es.addEventListener('clusters', e => renderWall(JSON.parse(e.data).provisional));
   es.addEventListener('done', e => {
-    const d = JSON.parse(e.data); if (d.faces_excluded == null && d.faces_found != null) d.faces_excluded = d.faces_excluded ?? 0;
-    const st = d.status === 'ready' ? pill('ready','ok') : d.status === 'partial' ? pill('partial','warn') : pill(d.status,'bad');
-    setStatus(`${st} <span>${fmt(d.images_done)} photos · ${fmt(d.faces_found)} faces (${fmt(d.faces_excluded)} excluded for quality) · ${fmt(d.people)} people${d.elapsed?` · ${d.elapsed}s`:''}</span>`);
+    const d = JSON.parse(e.data);
+    setStatus(`${statusPill(d.status)} <span>${fmt(d.images_done)} photos · ${fmt(d.faces_found)} faces (${fmt(d.faces_excluded)} excluded for quality) · ${fmt(d.people)} people${d.elapsed?` · ${d.elapsed}s`:''}</span>`);
     if (d.images_failed) $('#note').textContent += ` · ${d.images_failed} photos failed to load`;
     renderWall(false); es.close();
   });
-  es.addEventListener('error', e => {
-    try { const d = JSON.parse(e.data); setStatus(pill(d.error_code,'bad') + ' ' + (d.message||'')); } catch(_){}
-  });
+  es.addEventListener('error', e => { try { const d = JSON.parse(e.data); setStatus(pill(d.error_code,'bad') + ' ' + esc(d.message||'')); } catch(_){} });
 }
 
-// ---------- face wall
+// ---------- collection view: sources + search + pooled wall. No indexing here.
+async function openCollection(key){
+  const r = await fetch(`/api/collections/${key}`);
+  if (!r.ok){ setStatus(pill('not found','bad') + " that link doesn't point at a collection"); return; }
+  const c = await r.json();
+  enterView(); show('#f', false); show('#sourcesSec', true);
+  ctx = { kind:'collection', id: c.id, base: `/api/collections/${c.id}`, personUrl: cid => `/api/collections/${c.id}/people/${cid}/photos` };
+  history.replaceState(null, '', `/c/${c.slug}`);
+  $('#pageTitle').textContent = c.name;
+  $('#pageSub').textContent = `${fmt(c.people)} people across ${c.sources.length} ${c.sources.length===1?'gallery':'galleries'} · ${fmt(c.faces)} faces pooled`;
+  $('#sourcesCount').textContent = `${c.sources.length} · grouped into one set of people; more can be added from the home page`;
+  $('#sources').innerHTML = c.sources.map(s => `
+    <div class="src">
+      <div class="t"><a href="/g/${s.slug}">${esc(s.title || s.host)}</a></div>
+      <div class="r">${fmt(s.people)} people<br>${fmt(s.images_done)} photos</div>
+      <div class="u"><a href="${esc(s.url_canonical)}" target="_blank" rel="noopener">${esc(s.url_canonical)} ↗</a></div>
+    </div>`).join('');
+  renderWall(false);
+}
+
+// ---------- wall + person (both kinds)
 async function renderWall(provisional){
-  const r = await fetch(`/api/galleries/${gid}/people`); const people = await r.json();
-  $('#wallSec').classList.remove('hidden'); $('#search').classList.remove('hidden');
+  const people = await (await fetch(`${ctx.base}/people`)).json();
+  show('#wallSec', true); show('#search', true);
   $('#wallCount').textContent = `${fmt(people.length)}${provisional ? ' so far' : ''} · sorted by photo count`;
   $('#wall').innerHTML = people.length ? people.map(p =>
-    `<div class="face" data-id="${p.id}" title="${p.label}">
-       <img src="${p.crop_url}" alt="${p.label}" loading="lazy">
-       <div class="n"><b>${fmt(p.image_count)}</b> photo${p.image_count===1?'':'s'}</div></div>`).join('')
+    `<div class="face" data-id="${p.id}" title="${esc(p.label)}"><img src="${p.crop_url}" alt="${esc(p.label)}" loading="lazy">
+     <div class="n"><b>${fmt(p.image_count)}</b> photo${p.image_count===1?'':'s'}${p.source_count>1?` · ${p.source_count} galleries`:''}</div></div>`).join('')
     : `<div class="empty">No faces found yet.</div>`;
   $('#wall').querySelectorAll('.face').forEach(el => el.onclick = () => showPerson(el.dataset.id, el));
 }
-
 async function showPerson(cid, el){
   document.querySelectorAll('.face.active').forEach(x => x.classList.remove('active'));
   el?.classList.add('active');
-  const r = await fetch(`/api/people/${cid}/photos`); const d = await r.json();
-  $('#personSec').classList.remove('hidden');
+  const d = await (await fetch(ctx.personUrl(cid))).json();
+  show('#personSec', true);
   $('#personTitle').textContent = d.person.label;
   $('#personCount').textContent = `${fmt(d.photos.length)} photos · click any to open the original`;
-  $('#photos').innerHTML = d.photos.map(ph => photoCard(ph)).join('');
+  $('#photos').innerHTML = grouped(d.photos, ph => photoCard(ph));
   $('#personSec').scrollIntoView({behavior:'smooth', block:'start'});
 }
+// In a collection, photos are grouped under their source gallery.
+function grouped(items, render){
+  if (ctx.kind !== 'collection') return `<div class="photos">${items.map(render).join('')}</div>`;
+  const by = new Map();
+  for (const it of items) { const k = it.source_title || it.source_slug || '—'; (by.get(k) || by.set(k, []).get(k)).push(it); }
+  return [...by].map(([k, v]) => `<h3>${esc(k)} · ${v.length}</h3><div class="photos">${v.map(render).join('')}</div>`).join('');
+}
 function photoCard(ph, score){
-  return `<div class="ph"><img src="${ph.source_url}" loading="lazy" alt="">
-    <a href="${ph.page_url || ph.source_url}" target="_blank" rel="noopener" title="open original"></a>
+  return `<div class="ph"><img src="${esc(ph.source_url)}" loading="lazy" alt="">
+    <a href="${esc(ph.page_url || ph.source_url)}" target="_blank" rel="noopener" title="open original"></a>
     ${score!=null?`<span class="s">${Math.round(score*100)}%</span>`:''}</div>`;
 }
-$('#closePerson').onclick = () => $('#personSec').classList.add('hidden');
+$('#closePerson').onclick = () => show('#personSec', false);
 
-// ---------- selfie search
+// ---------- selfie search (both kinds)
 $('#selfie').onchange = async () => {
   const file = $('#selfie').files[0]; if (!file) return;
   $('#selfiePreview').src = URL.createObjectURL(file); $('#selfiePreview').classList.remove('hidden');
   $('#dropText').textContent = 'Searching…';
   const fd = new FormData(); fd.append('selfie', file);
-  const r = await fetch(`/api/galleries/${gid}/search`, {method:'POST', body: fd});
+  const r = await fetch(`${ctx.base}/search`, {method:'POST', body: fd});
   const d = await r.json();
   if (!r.ok){ $('#dropText').textContent = d.detail?.message || 'Search failed'; return; }
   $('#dropText').textContent = `${d.confident.length} confident · ${d.possible.length} possible${d.faces_in_selfie>1?` · using the largest of ${d.faces_in_selfie} faces`:''}`;
   $('#results').innerHTML =
-    (d.confident.length ? `<h2>Confident matches <small>${d.confident.length}</small></h2><div class="photos">${d.confident.map(p=>photoCard(p,p.score)).join('')}</div>` : `<div class="empty">No confident matches in this gallery.</div>`) +
-    (d.possible.length ? `<h2>Possible matches <small>${d.possible.length} · lower confidence, shown separately on purpose</small></h2><div class="photos">${d.possible.map(p=>photoCard(p,p.score)).join('')}</div>` : '');
+    (d.confident.length ? `<h2>Confident matches <small>${d.confident.length}</small></h2>${grouped(d.confident, p=>photoCard(p,p.score))}` : `<div class="empty">No confident matches here.</div>`) +
+    (d.possible.length ? `<h2>Possible matches <small>${d.possible.length} · lower confidence, shown separately on purpose</small></h2>${grouped(d.possible, p=>photoCard(p,p.score))}` : '');
 };
 const drop = $('#drop');
 drop.ondragover = e => { e.preventDefault(); };
 drop.ondrop = e => { e.preventDefault(); $('#selfie').files = e.dataTransfer.files; $('#selfie').onchange(); };
 
-// ---------- routing: /g/{slug} is the shareable link; ?g= kept for old links
-const _m = location.pathname.match(/^\/g\/([a-z0-9]+)/i);
+// ---------- routing: /g/{slug} galleries, /c/{slug} collections, ?g= kept for old links
+const _g = location.pathname.match(/^\/g\/([a-z0-9]+)/i), _c = location.pathname.match(/^\/c\/([a-z0-9]+)/i);
 const _q = new URLSearchParams(location.search).get('g');
-if (_m || _q) open(_m ? _m[1] : _q); else loadGalleries();
+if (_c) openCollection(_c[1]); else if (_g || _q) openGallery(_g ? _g[1] : _q); else loadHome();
 </script>
 </body>
 </html>

@@ -76,6 +76,39 @@ CREATE TABLE IF NOT EXISTS faces (
 );
 CREATE INDEX IF NOT EXISTS idx_faces_gallery ON faces(gallery_id, cluster_id);
 CREATE INDEX IF NOT EXISTS idx_faces_image ON faces(image_id);
+
+-- Collections: a pool of galleries grouped into one set of people. Faces stay
+-- owned by their gallery; a collection only maps them to its own clusters.
+CREATE TABLE IF NOT EXISTS collections (
+  id          TEXT PRIMARY KEY,
+  slug        TEXT UNIQUE,                     -- /c/{slug}
+  name        TEXT NOT NULL,
+  created_at  TEXT NOT NULL,
+  grouped_at  TEXT
+);
+CREATE TABLE IF NOT EXISTS collection_sources (
+  collection_id TEXT NOT NULL REFERENCES collections(id) ON DELETE CASCADE,
+  gallery_id    TEXT NOT NULL REFERENCES galleries(id) ON DELETE CASCADE,
+  position      INTEGER NOT NULL,
+  PRIMARY KEY (collection_id, gallery_id)
+);
+CREATE TABLE IF NOT EXISTS collection_clusters (
+  id            TEXT PRIMARY KEY,
+  collection_id TEXT NOT NULL REFERENCES collections(id) ON DELETE CASCADE,
+  label         TEXT,
+  face_count    INTEGER NOT NULL DEFAULT 0,
+  image_count   INTEGER NOT NULL DEFAULT 0,
+  source_count  INTEGER NOT NULL DEFAULT 0,
+  rep_face_id   TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_cclusters ON collection_clusters(collection_id, image_count DESC);
+CREATE TABLE IF NOT EXISTS collection_faces (
+  collection_id TEXT NOT NULL REFERENCES collections(id) ON DELETE CASCADE,
+  face_id       TEXT NOT NULL REFERENCES faces(id) ON DELETE CASCADE,
+  cluster_id    TEXT NOT NULL REFERENCES collection_clusters(id) ON DELETE CASCADE,
+  PRIMARY KEY (collection_id, face_id)
+);
+CREATE INDEX IF NOT EXISTS idx_cfaces_cluster ON collection_faces(cluster_id);
 """
 
 
@@ -127,11 +160,11 @@ def _relax_expiry(con) -> None:
 _ALPHABET = "abcdefghijkmnpqrstuvwxyz23456789"   # no 0/o/1/l — links get read aloud
 
 
-def new_slug(con, n: int = 6) -> str:
+def new_slug(con, n: int = 6, table: str = "galleries") -> str:
     import secrets
     while True:
         slug = "".join(secrets.choice(_ALPHABET) for _ in range(n))
-        if not con.execute("SELECT 1 FROM galleries WHERE slug=?", (slug,)).fetchone():
+        if not con.execute(f"SELECT 1 FROM {table} WHERE slug=?", (slug,)).fetchone():
             return slug
 
 
