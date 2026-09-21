@@ -160,8 +160,8 @@ Batching: images processed in batches of 32 through both models. Worker concurre
 
 ## 6. Selfie search
 
-1. Decode upload (max 10 MB, JPEG/PNG/HEIC/WebP), strip EXIF **including GPS** before any processing.
-2. Detect faces. Zero → `NO_FACE_DETECTED` with retake guidance (T-C4). More than one → return the candidate crops and let the user pick, defaulting to largest-area (T-C3).
+1. Decode upload (max 10 MB, JPEG/PNG/HEIC/WebP) through PIL: apply EXIF orientation (phone photos are stored rotated), HEIC via `pillow-heif`, downscale past 2000 px; strip EXIF **including GPS** before any processing.
+2. Detect faces — **with a padding ladder.** SCRFD is trained on faces small relative to the frame; a selfie's face fills 50%+ and, upscaled to the 1024 px detection window, exceeds every anchor (measured on the portrait fixture: 1 face found at 33% of frame, 0 at 50%). So when detection returns nothing, the frame is padded with a neutral border (50%, 100%, 175% of its size) and retried, boxes mapped back. Indexing gets one padded retry too, for frame-filling portraits. Zero after the ladder → `NO_FACE_DETECTED` with retake guidance (T-C4). More than one → return the candidate crops and let the user pick, defaulting to largest-area (T-C3).
 3. Embed with the identical align → ArcFace path as indexing. *Any divergence between index-time and query-time preprocessing silently destroys accuracy; this is enforced by a shared code path, not by convention.*
 4. ANN query: `SELECT ... ORDER BY embedding <=> $1 LIMIT 500` over the gallery's faces, HNSW `ef_search=100`.
 5. Two-tier thresholds on cosine similarity:

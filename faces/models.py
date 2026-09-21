@@ -78,9 +78,34 @@ def crop_face(bgr: np.ndarray, bbox, scale: float = 1.4, out: int = 256) -> np.n
     return cv2.resize(patch, (out, out), interpolation=cv2.INTER_AREA)
 
 
+def _detect(bgr: np.ndarray, pads=(0.0, 0.5, 1.0, 1.75)):
+    """Detect, padding the frame when nothing is found.
+
+    SCRFD is trained on faces that are small relative to the frame. A selfie —
+    face filling 50%+ of the image — gets upscaled to the 1024 px detection
+    window until the face is larger than any anchor, and detection returns
+    nothing (measured: 1 face at 33% of frame, 0 at 50%). Adding a border
+    shrinks the face back into range; boxes are mapped back to the original."""
+    h, w = bgr.shape[:2]
+    for pad in pads:
+        if pad == 0:
+            img, ox, oy = bgr, 0, 0
+        else:
+            oy, ox = int(h * pad / 2), int(w * pad / 2)
+            img = cv2.copyMakeBorder(bgr, oy, oy, ox, ox, cv2.BORDER_CONSTANT, value=(114, 114, 114))
+        faces = get_app().get(img)
+        if faces:
+            for f in faces:
+                f.bbox = f.bbox - np.array([ox, oy, ox, oy], dtype=f.bbox.dtype)
+                if getattr(f, "kps", None) is not None:
+                    f.kps = f.kps - np.array([ox, oy], dtype=f.kps.dtype)
+            return faces
+    return []
+
+
 def analyze(bgr: np.ndarray):
     """Detect + embed every face. Returns dicts with bbox, score, blur, embedding, crop."""
-    faces = get_app().get(bgr)
+    faces = _detect(bgr, pads=(0.0, 0.75))     # one padded retry for frame-filling faces
     out = []
     for f in faces:
         bbox = [int(v) for v in f.bbox]
@@ -100,7 +125,7 @@ def analyze(bgr: np.ndarray):
 
 def embed_query(bgr: np.ndarray):
     """Selfie path — same code as indexing, by construction (Tech Spec §6 step 3)."""
-    faces = get_app().get(bgr)
+    faces = _detect(bgr)                        # selfies: full padding ladder
     faces.sort(key=lambda f: (f.bbox[2] - f.bbox[0]) * (f.bbox[3] - f.bbox[1]), reverse=True)
     return [{
         "bbox": [int(v) for v in f.bbox],

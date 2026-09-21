@@ -2,6 +2,7 @@
 
 Every per-gallery route accepts either the uuid or the short slug (/g/{slug}).
 """
+import io
 import json
 import logging
 import queue
@@ -165,17 +166,7 @@ async def search(key: str, selfie: UploadFile = File(...)):
     """Selfie -> two-tier photo list. The embedding never leaves this request."""
     con = db.connect()
     gid = _gallery_or_404(con, key)["id"]
-    data = await selfie.read()
-    if len(data) > 10 * 1024 * 1024:
-        raise HTTPException(413, {"error_code": "TOO_LARGE", "message": "Max 10 MB."})
-    arr = cv2.imdecode(np.frombuffer(data, np.uint8), cv2.IMREAD_COLOR)
-    if arr is None:
-        raise HTTPException(400, {"error_code": "NOT_AN_IMAGE", "message": "Couldn't read that image."})
-    with pipeline._infer_lock:
-        found = models.embed_query(arr)
-    if not found:
-        raise HTTPException(422, {"error_code": "NO_FACE_DETECTED",
-                                  "message": "We couldn't find a face in that photo. Try a clearer, front-facing shot."})
+    found = _selfie_embedding(await selfie.read())
     q = found[0]["embedding"]                           # largest face (T-C3 default)
     ids, mat = db.load_embeddings(con, gid)
     if not ids:
@@ -250,12 +241,35 @@ def _collection_or_404(con, key: str) -> dict:
     return c
 
 
+def _decode_upload(data: bytes) -> np.ndarray:
+    """Phone photos arrive rotated-by-EXIF and often as HEIC; decode through PIL
+    so orientation is applied and HEIC works, then hand OpenCV an upright BGR frame."""
+    from PIL import Image, ImageOps
+    try:
+        import pillow_heif                        # optional; registers HEIC/HEIF with PIL
+        pillow_heif.register_heif_opener()
+    except ImportError:
+        pass
+    try:
+        im = Image.open(io.BytesIO(data))
+        im = ImageOps.exif_transpose(im).convert("RGB")
+    except Exception:                             # noqa: BLE001
+        arr = cv2.imdecode(np.frombuffer(data, np.uint8), cv2.IMREAD_COLOR)
+        if arr is None:
+            raise HTTPException(400, {"error_code": "NOT_AN_IMAGE", "message": "Couldn't read that image."})
+        return arr
+    arr = cv2.cvtColor(np.asarray(im), cv2.COLOR_RGB2BGR)
+    h, w = arr.shape[:2]
+    if max(h, w) > 2000:                          # phone originals are 4000px+; nothing gained past this
+        sc = 2000 / max(h, w)
+        arr = cv2.resize(arr, (int(w * sc), int(h * sc)), interpolation=cv2.INTER_AREA)
+    return arr
+
+
 def _selfie_embedding(data: bytes):
     if len(data) > 10 * 1024 * 1024:
         raise HTTPException(413, {"error_code": "TOO_LARGE", "message": "Max 10 MB."})
-    arr = cv2.imdecode(np.frombuffer(data, np.uint8), cv2.IMREAD_COLOR)
-    if arr is None:
-        raise HTTPException(400, {"error_code": "NOT_AN_IMAGE", "message": "Couldn't read that image."})
+    arr = _decode_upload(data)
     with pipeline._infer_lock:
         found = models.embed_query(arr)
     if not found:

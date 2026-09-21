@@ -9,3 +9,4 @@ httpx
 playwright
 python-multipart
 pyyaml
+pillow-heif

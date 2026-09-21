@@ -304,6 +304,7 @@ FIX-1 and FIX-2 are the same event, which makes them a useful pair: the same peo
 | T-C7 | Selfie query against a gallery still indexing | Runs against the indexed subset, with a visible "still indexing — N of M" state and auto-refresh |
 | T-C8 | Same selfie submitted twice | Identical ranked results |
 | T-C9 | p95 latency, warm index, 1,000+ image gallery | ≤ 3s end-to-end |
+| T-C11 | Selfie where the face fills ≥ 50% of the frame (every phone selfie), and a phone photo stored with EXIF rotation, and a HEIC | Face detected; orientation corrected; same results as a JPEG of the same shot |
 | T-C10 | Same selfie run against FIX-1 (candid) and FIX-2 (portraits) | Both return the same person; recall on FIX-2 ≥ recall on FIX-1. A *lower* score on the posed gallery means preprocessing is broken, not that the photos are hard |
 
 ### D. Privacy, safety, and abuse
