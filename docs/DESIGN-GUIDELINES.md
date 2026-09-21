@@ -89,9 +89,10 @@ Opacity and border-color only, 120ms ease. No transforms, no lifts. A tile shows
 └──────────────────────────────────────────────────────────────┘
 ```
 
-- **Header** is a single line: wordmark left, one text link right. It is the only element with a full-width hairline.
+- **Header** is a single line: wordmark left, the credit right ("Created by Oz Nakash", LinkedIn glyph, `oznakash.com` — the same component as the footer). It is the only element with a full-width hairline. On a standalone collection page the wordmark is inert: nothing on that page leads anywhere else in the app.
 - **Home** is the gallery list: rows on `--surface`, hairline-separated, each with title / URL / meta and the short link on the right.
 - **Gallery page** stacks: title → status → selfie → wall → person. Sections appear as they become relevant; nothing is a modal.
+- **Collection page** is the cleanest view: title and one status line → selfie → wall → person. No sources, no links to other pages; those live on `/admin`.
 
 ---
 
@@ -115,11 +116,9 @@ Opacity and border-color only, 120ms ease. No transforms, no lifts. A tile shows
 
 **Gallery row.** `--surface`, hairline border, 14px 16px padding. Title in `--ink`, URL and meta in `--ink-2`, short link in a hairline-boxed `code` on the right with a text-button *Copy link*.
 
-**Footer.** A hairline above, 12px `--ink-2`: "Created by Oz Nakash", a 14px LinkedIn glyph in `currentColor`, and `oznakash.com`. Links go `--ink` on hover. It is the quietest thing on the page and the only place a credit appears.
+**Credit** (header right and footer). 12px `--ink-2`: "Created by Oz Nakash", a 14px LinkedIn glyph in `currentColor`, and `oznakash.com`. Links go `--ink` on hover. The quietest thing on the page.
 
 **Empty / error.** Plain sentence in `--ink-2`, centered, 40px padding. Errors use `--danger` text and say what to do next.
-
-**Source row (collections).** Hairline-separated rows, no background: gallery title as a link to its Faces page, its origin URL beneath in `--ink-2` opening in a new tab, counts right-aligned. Reads as a caption list, not a card list.
 
 **Sub-head (h3).** 13px uppercase, letter-spacing .06em, `--ink-2`. Used for form sub-sections on the home page; never to split a photo grid.
 

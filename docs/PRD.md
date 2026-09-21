@@ -177,7 +177,7 @@ v1 ships when **every** item below is true. These are binary, not aspirational.
 - [ ] **D5** Results stream during indexing — first faces visible before the job completes.
 - [ ] **D6** Re-submitting an already-indexed URL returns cached results without re-processing.
 - [ ] **D7** Selected photos can be downloaded or shared via a stable link.
-- [ ] **D7b** A **collection** pools several indexed galleries into one set of people at its own short link (`/c/<slug>`): it names its sources, groups the same person across galleries into one tile, searches the whole pool from a selfie, labels every result with its source, and offers no indexing of its own. Sources can be added later without re-indexing.
+- [ ] **D7b** A **collection** pools several indexed galleries into one set of people at its own short link (`/c/<slug>`): it groups the same person across galleries into one tile (sources are visible and managed on the admin home, not on the page), searches the whole pool from a selfie, labels every result with its source, and offers no indexing of its own. Sources can be added later without re-indexing.
 - [ ] **D7a** Every indexed gallery has a short, stable, shareable link (`/g/<slug>`) that opens straight to its face wall — faces → photos → the original on the source page, with no setup for the viewer. The home page lists every indexed gallery with its link.
 
 ### Quality gates

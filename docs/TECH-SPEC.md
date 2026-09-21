@@ -319,8 +319,9 @@ All app routes are Next.js route handlers; the worker is reachable only from the
 | `POST` | `/api/galleries/:id/search` | `multipart` selfie → `{confident:[], possible:[], query_id}` |
 | `POST` | `/api/galleries/:id/search/select-face` | Disambiguates a multi-face selfie (T-C3) |
 | `DELETE` | `/api/galleries/:id` | Immediate deletion of index, crops, embeddings (D13/T-D3) |
+| `GET` | `/` · `/admin` | With `FACES_STANDALONE` set, `/` redirects to that collection; `/admin` is the unlinked working home |
 | `GET` | `/c/:slug` | A **collection's** shareable link: sources, pooled face wall, selfie search — no indexing |
-| `POST` `GET` | `/api/collections`, `/api/collections/:key` | Create (name + gallery keys) / read, with sources and counts |
+| `POST` `GET` `PATCH` | `/api/collections`, `/api/collections/:key` | Create (name + gallery keys + optional link name) / read / rename or change link name. Link names are `[a-z0-9-]`, e.g. `iia-summit-2026`; the random 6-char slug is only the default |
 | `POST` `DELETE` | `/api/collections/:key/sources[/:gallery]` | Add or remove a source; regroups the pool |
 | `GET` | `/api/collections/:key/people`, `…/people/:id/photos` | Pooled people; a person's photos across sources, each labeled |
 | `POST` | `/api/collections/:key/search` | Selfie against the pooled faces; results carry their source |
@@ -456,7 +457,7 @@ A collection is a named, ordered set of indexed galleries presented as **one set
 
 **Lead thumbnail — "sharpest face wins, any source."** Each pooled person's tile uses the face with the highest `0.4·det_score + 0.3·min(1, short_edge/160) + 0.3·min(1, blur_var/200)`. Each term is capped so a large but soft candid can't outscore a clean portrait; in practice the portrait galleries win almost every tile, which is the intent, without hard-coding a source preference.
 
-**Results carry their source.** Every photo in a person view or a selfie result carries the gallery it came from (`source_slug`, `source_title`) — shown in the tile's hover band and kept as data on the card for later filtering, while the grid itself stays one flat matrix. The sources list at the top of the page links both to each gallery's Faces page and to its origin URL.
+**Results carry their source.** Every photo in a person view or a selfie result carries the gallery it came from (`source_slug`, `source_title`) — shown in the tile's hover band and kept as data on the card for later filtering, while the grid itself stays one flat matrix. The collection page itself lists no sources and links nowhere else in the app; sources are managed and visible on `/admin`.
 
 **First collection, FIX-1 + FIX-2 pooled (4,652 faces), default thresholds:** 373 people, of whom **106 appear in both galleries** (461 per-gallery clusters → 373 pooled). Lead thumbnails: 246 from the portrait gallery, 127 from the candid one — and among the 106 cross-gallery people, **102 lead with a portrait**. The largest pooled person (234 photos) is the 142-photo reception person and the 90-photo portrait outlier combined: a host, and a useful sanity check that the two galleries' clusters line up. Regrouping takes ~3 s.
 

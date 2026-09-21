@@ -5,13 +5,14 @@ Every per-gallery route accepts either the uuid or the short slug (/g/{slug}).
 import io
 import json
 import logging
+import os
 import queue
 from contextlib import asynccontextmanager
 
 import cv2
 import numpy as np
 from fastapi import FastAPI, File, HTTPException, UploadFile
-from fastapi.responses import FileResponse, StreamingResponse
+from fastapi.responses import FileResponse, RedirectResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
@@ -36,6 +37,8 @@ app = FastAPI(title="Faces (local)", lifespan=lifespan)
 app.mount("/crops", StaticFiles(directory=CROPS, check_dir=False), name="crops")
 INDEX = ROOT / "static" / "index.html"
 NO_CACHE = {"Cache-Control": "no-cache"}         # the page must never be stale after a redesign
+# Standalone: expose exactly one collection. "/" goes there; the working home lives at /admin.
+STANDALONE = os.environ.get("FACES_STANDALONE", "").strip() or None
 
 
 class SubmitBody(BaseModel):
@@ -55,6 +58,14 @@ def _gallery_or_404(con, key: str) -> dict:
 # ---------------------------------------------------------------- pages
 @app.get("/")
 def index():
+    if STANDALONE:
+        return RedirectResponse(f"/c/{STANDALONE}", status_code=302)
+    return FileResponse(INDEX, headers=NO_CACHE)
+
+
+@app.get("/admin")
+def admin():
+    """The working home: index galleries, build collections. Not linked from anywhere public."""
     return FileResponse(INDEX, headers=NO_CACHE)
 
 
@@ -222,6 +233,18 @@ def delete(key: str):
 class CollectionBody(BaseModel):
     name: str
     galleries: list[str] = []
+    slug: str | None = None                     # optional link name, e.g. "iia-summit-2026"
+
+
+class CollectionPatch(BaseModel):
+    name: str | None = None
+    slug: str | None = None
+
+
+SLUG_MESSAGES = {
+    "SLUG_INVALID": "Link names use lowercase letters, digits and hyphens (2–64 characters).",
+    "SLUG_TAKEN": "That link name is already used by another collection.",
+}
 
 
 class SourceBody(BaseModel):
@@ -284,9 +307,11 @@ def create_collection(body: CollectionBody):
         raise HTTPException(400, {"error_code": "INVALID", "message": "Give the collection a name."})
     con = db.connect()
     try:
-        c = collections.create(con, body.name, body.galleries)
+        c = collections.create(con, body.name, body.galleries, body.slug)
     except KeyError as e:
         raise HTTPException(404, {"error_code": "NOT_FOUND", "message": str(e)})
+    except ValueError as e:
+        raise HTTPException(400, {"error_code": str(e), "message": SLUG_MESSAGES.get(str(e), str(e))})
     out = _collection_or_404(con, c["id"])
     con.close()
     return out
@@ -307,6 +332,24 @@ def collection(key: str):
     c = _collection_or_404(con, key)
     con.close()
     return c
+
+
+@app.patch("/api/collections/{key}")
+def patch_collection(key: str, body: CollectionPatch):
+    """Rename a collection or change its link name. The old link stops working."""
+    con = db.connect()
+    c = _collection_or_404(con, key)
+    try:
+        if body.slug is not None:
+            collections.set_slug(con, c["id"], body.slug)
+        if body.name is not None and body.name.strip():
+            with con:
+                con.execute("UPDATE collections SET name=? WHERE id=?", (body.name.strip(), c["id"]))
+    except ValueError as e:
+        raise HTTPException(400, {"error_code": str(e), "message": SLUG_MESSAGES.get(str(e), str(e))})
+    out = _collection_or_404(con, c["id"])
+    con.close()
+    return out
 
 
 @app.post("/api/collections/{key}/sources")

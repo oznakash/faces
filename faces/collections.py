@@ -35,11 +35,35 @@ def sources(con, cid: str) -> list[dict]:
     return [{**dict(r), "short_url": f"/g/{r['slug']}"} for r in rows]
 
 
-def create(con, name: str, gallery_keys: list[str]) -> dict:
+SLUG_RE = __import__("re").compile(r"^[a-z0-9][a-z0-9-]{1,63}$")
+
+
+def valid_slug(slug: str) -> str:
+    """Link names: lowercase letters, digits, hyphens. Human-readable, URL-safe."""
+    slug = (slug or "").strip().lower()
+    if not SLUG_RE.match(slug):
+        raise ValueError("SLUG_INVALID")
+    return slug
+
+
+def set_slug(con, cid: str, slug: str) -> None:
+    slug = valid_slug(slug)
+    taken = con.execute("SELECT id FROM collections WHERE slug=? AND id!=?", (slug, cid)).fetchone()
+    if taken:
+        raise ValueError("SLUG_TAKEN")
+    with con:
+        con.execute("UPDATE collections SET slug=? WHERE id=?", (slug, cid))
+
+
+def create(con, name: str, gallery_keys: list[str], slug: str | None = None) -> dict:
     cid = db.new_id()
+    if slug:
+        slug = valid_slug(slug)
+        if con.execute("SELECT 1 FROM collections WHERE slug=?", (slug,)).fetchone():
+            raise ValueError("SLUG_TAKEN")
     with con:
         con.execute("INSERT INTO collections (id,slug,name,created_at) VALUES (?,?,?,?)",
-                    (cid, db.new_slug(con, table="collections"), name.strip(), db.now()))
+                    (cid, slug or db.new_slug(con, table="collections"), name.strip(), db.now()))
         for i, k in enumerate(gallery_keys):
             g = _resolve_gallery(con, k)
             con.execute("INSERT OR IGNORE INTO collection_sources (collection_id,gallery_id,position) VALUES (?,?,?)",

@@ -22,8 +22,11 @@
   .top{border-bottom:1px solid var(--hair)}
   .top .in{max-width:1200px;margin:0 auto;padding:18px 24px;display:flex;align-items:baseline;justify-content:space-between}
   .mark{font-size:22px;font-weight:300;letter-spacing:.12em;text-transform:uppercase;text-decoration:none;cursor:pointer}
-  .top nav a{font-size:13px;text-decoration:none;color:var(--ink);cursor:pointer}
-  .top nav a:hover{text-decoration:underline}
+  .credit{font-size:12px;color:var(--ink-2);display:flex;gap:12px;align-items:center;flex-wrap:wrap}
+  .credit a{color:var(--ink-2);text-decoration:none;display:inline-flex;align-items:center;gap:6px}
+  .credit a:hover{color:var(--ink);text-decoration:underline}
+  .credit svg{width:14px;height:14px;fill:currentColor;display:block}
+  .mark.inert{cursor:default}
 
   main{max-width:1200px;margin:0 auto;padding:36px 24px 80px}
   .sub{color:var(--ink-2);margin:0 0 22px;overflow-wrap:anywhere}
@@ -90,16 +93,8 @@
   .g .copy:hover{text-decoration:underline}
   .back{margin:0 0 18px;font-size:13px}
   footer{border-top:1px solid var(--hair)}
-  footer .in{max-width:1200px;margin:0 auto;padding:18px 24px;font-size:12px;color:var(--ink-2);display:flex;gap:14px;align-items:center;flex-wrap:wrap}
-  footer a{color:var(--ink-2);text-decoration:none;display:inline-flex;align-items:center;gap:6px}
-  footer a:hover{color:var(--ink);text-decoration:underline}
-  footer svg{width:14px;height:14px;fill:currentColor;display:block}
+  footer .in{max-width:1200px;margin:0 auto;padding:18px 24px}
   @media (max-width:600px){ footer .in{padding:14px 16px} }
-  .src{display:grid;grid-template-columns:1fr auto;gap:2px 16px;align-items:center;border-top:1px solid var(--hair);padding:10px 0}
-  .src:last-child{border-bottom:1px solid var(--hair)}
-  .src .t a{text-decoration:none} .src .t a:hover{text-decoration:underline}
-  .src .u,.src .m{font-size:12px;color:var(--ink-2);grid-column:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-  .src .u a{color:var(--ink-2)} .src .r{grid-row:1/4;font-size:12px;color:var(--ink-2);text-align:right}
   h3{font-size:13px;font-weight:400;color:var(--ink-2);margin:18px 0 8px;letter-spacing:.06em;text-transform:uppercase}
   .row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
   input[type=text],select{font:inherit;padding:10px 12px;border:1px solid var(--hair-2);border-radius:0;background:var(--surface);color:var(--ink)}
@@ -113,7 +108,11 @@
 <body>
 <div class="top"><div class="in">
   <a class="mark" id="mark">Faces</a>
-  <nav><a id="navHome">Galleries</a></nav>
+  <div class="credit">
+    <span>Created by Oz Nakash</span>
+    <a href="https://linkedin.com/in/oznakash" target="_blank" rel="noopener" aria-label="Oz Nakash on LinkedIn" title="LinkedIn"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20.45 20.45h-3.55v-5.57c0-1.33-.03-3.04-1.85-3.04-1.85 0-2.14 1.45-2.14 2.94v5.67H9.36V9h3.41v1.56h.05c.47-.9 1.63-1.85 3.36-1.85 3.6 0 4.27 2.37 4.27 5.45v6.29zM5.34 7.43a2.06 2.06 0 1 1 0-4.12 2.06 2.06 0 0 1 0 4.12zM7.12 20.45H3.56V9h3.56v11.45zM22.22 0H1.77C.79 0 0 .77 0 1.73v20.54C0 23.23.79 24 1.77 24h20.45c.98 0 1.78-.77 1.78-1.73V1.73C24 .77 23.2 0 22.22 0z"/></svg></a>
+    <a href="https://oznakash.com" target="_blank" rel="noopener">oznakash.com</a>
+  </div>
 </div></div>
 <main>
   <h1 id="pageTitle">Point it at a public photo gallery.</h1>
@@ -124,16 +123,11 @@
   </form>
   <p class="back hidden" id="back"><button class="ghost" id="backBtn">&larr; Home</button></p>
 
-  <section id="sourcesSec" class="hidden">
-    <h2>Sources <small id="sourcesCount"></small></h2>
-    <div id="sources"></div>
-  </section>
-
   <section id="collSec">
     <h2>Collections <small>several galleries pooled into one set of people — search only, no indexing</small></h2>
     <div class="list" id="colls"></div>
     <h3>New collection</h3>
-    <div class="row"><input type="text" id="collName" placeholder="Name, e.g. IIA AI Summit 2026"><button class="btn sm" id="collCreate">Create</button></div>
+    <div class="row"><input type="text" id="collName" placeholder="Name, e.g. IIA AI Summit 2026"><input type="text" id="collSlug" placeholder="Link name (optional), e.g. iia-summit-2026"><button class="btn sm" id="collCreate">Create</button></div>
     <div id="collPick"></div>
   </section>
 
@@ -165,7 +159,7 @@
     <div class="photos" id="photos"></div>
   </section>
 </main>
-<footer><div class="in">
+<footer><div class="in credit">
   <span>Created by Oz Nakash</span>
   <a href="https://linkedin.com/in/oznakash" target="_blank" rel="noopener" aria-label="Oz Nakash on LinkedIn" title="LinkedIn">
     <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20.45 20.45h-3.55v-5.57c0-1.33-.03-3.04-1.85-3.04-1.85 0-2.14 1.45-2.14 2.94v5.67H9.36V9h3.41v1.56h.05c.47-.9 1.63-1.85 3.36-1.85 3.6 0 4.27 2.37 4.27 5.45v6.29zM5.34 7.43a2.06 2.06 0 1 1 0-4.12 2.06 2.06 0 0 1 0 4.12zM7.12 20.45H3.56V9h3.56v11.45zM22.22 0H1.77C.79 0 0 .77 0 1.73v20.54C0 23.23.79 24 1.77 24h20.45c.98 0 1.78-.77 1.78-1.73V1.73C24 .77 23.2 0 22.22 0z"/></svg>
@@ -226,27 +220,29 @@ $('#collCreate').onclick = async () => {
   const galleries = [...document.querySelectorAll('#collPick input:checked')].map(i => i.value);
   if (!name) { $('#collName').focus(); return; }
   $('#collCreate').disabled = true;
-  const r = await fetch('/api/collections', {method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({name, galleries})});
+  const slug = $('#collSlug').value.trim() || null;
+  const r = await fetch('/api/collections', {method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({name, galleries, slug})});
   $('#collCreate').disabled = false;
   if (!r.ok) { const err = await r.json(); setStatus(pill(err.detail?.message || 'Error','bad')); return; }
   const c = await r.json(); openCollection(c.slug);
 };
 
 function home(){
-  ctx = null; if (es) es.close();
-  history.replaceState(null, '', '/');
+  ctx = null; if (es) es.close(); wordmark(true);
+  history.replaceState(null, '', '/admin');
   $('#pageTitle').textContent = 'Point it at a public photo gallery.';
   $('#pageSub').textContent = "See everyone who's in it. Find every photo you're in.";
-  ['#wallSec','#personSec','#search','#back','#sourcesSec'].forEach(x => show(x, false));
+  ['#wallSec','#personSec','#search','#back'].forEach(x => show(x, false));
   ['#f','#collSec','#listSec'].forEach(x => show(x, true));
   setStatus(''); $('#note').textContent = ''; $('#results').innerHTML = '';
   loadHome();
 }
-$('#backBtn').onclick = home; $('#mark').onclick = home; $('#navHome').onclick = home;
+$('#backBtn').onclick = home;
+function wordmark(clickable){ $('#mark').onclick = clickable ? home : null; $('#mark').classList.toggle('inert', !clickable); }
 
 function enterView(){
   if (es) es.close();
-  ['#wallSec','#personSec','#search','#sourcesSec','#collSec','#listSec'].forEach(x => show(x, false));
+  ['#wallSec','#personSec','#search','#collSec','#listSec'].forEach(x => show(x, false));
   show('#back', true);
   $('#wall').innerHTML = ''; $('#results').innerHTML = ''; $('#note').textContent = ''; setStatus('');
   $('#selfiePreview').classList.add('hidden'); $('#dropText').textContent = 'Drop a selfie here, or click to choose';
@@ -267,7 +263,7 @@ async function openGallery(key){
   const gr = await fetch(`/api/galleries/${key}`);
   if (!gr.ok){ setStatus(pill('not found','bad') + " that link doesn't point at an indexed gallery"); return; }
   const g0 = await gr.json();
-  enterView(); show('#f', true);
+  enterView(); show('#f', true); wordmark(true);
   ctx = { kind:'gallery', id: g0.id, base: `/api/galleries/${g0.id}`, personUrl: cid => `/api/people/${cid}/photos` };
   history.replaceState(null, '', `/g/${g0.slug}`);
   $('#url').value = g0.url_canonical;
@@ -299,18 +295,11 @@ async function openCollection(key){
   const r = await fetch(`/api/collections/${key}`);
   if (!r.ok){ setStatus(pill('not found','bad') + " that link doesn't point at a collection"); return; }
   const c = await r.json();
-  enterView(); show('#f', false); show('#sourcesSec', true);
+  enterView(); show('#f', false); show('#back', false); wordmark(false);
   ctx = { kind:'collection', id: c.id, base: `/api/collections/${c.id}`, personUrl: cid => `/api/collections/${c.id}/people/${cid}/photos` };
   history.replaceState(null, '', `/c/${c.slug}`);
   $('#pageTitle').textContent = c.name;
   $('#pageSub').textContent = `${fmt(c.people)} people across ${c.sources.length} ${c.sources.length===1?'gallery':'galleries'} · ${fmt(c.faces)} faces pooled`;
-  $('#sourcesCount').textContent = `${c.sources.length} · grouped into one set of people; more can be added from the home page`;
-  $('#sources').innerHTML = c.sources.map(s => `
-    <div class="src">
-      <div class="t"><a href="/g/${s.slug}">${esc(s.title || s.host)}</a></div>
-      <div class="r">${fmt(s.people)} people<br>${fmt(s.images_done)} photos</div>
-      <div class="u"><a href="${esc(s.url_canonical)}" target="_blank" rel="noopener">${esc(s.url_canonical)} ↗</a></div>
-    </div>`).join('');
   renderWall(false);
 }
 
@@ -364,9 +353,9 @@ drop.ondragover = e => { e.preventDefault(); };
 drop.ondrop = e => { e.preventDefault(); $('#selfie').files = e.dataTransfer.files; $('#selfie').onchange(); };
 
 // ---------- routing: /g/{slug} galleries, /c/{slug} collections, ?g= kept for old links
-const _g = location.pathname.match(/^\/g\/([a-z0-9]+)/i), _c = location.pathname.match(/^\/c\/([a-z0-9]+)/i);
+const _g = location.pathname.match(/^\/g\/([a-z0-9-]+)/i), _c = location.pathname.match(/^\/c\/([a-z0-9-]+)/i);
 const _q = new URLSearchParams(location.search).get('g');
-if (_c) openCollection(_c[1]); else if (_g || _q) openGallery(_g ? _g[1] : _q); else loadHome();
+if (_c) openCollection(_c[1]); else if (_g || _q) openGallery(_g ? _g[1] : _q); else { wordmark(true); loadHome(); }
 </script>
 </body>
 </html>

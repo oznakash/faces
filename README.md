@@ -53,6 +53,8 @@ Requires Python 3.12+. First run downloads the face models (~280 MB) and a headl
 
 Then open <http://localhost:8000>, paste a gallery URL, and watch the wall fill in. Everything — the index, face crops, and thresholds — lives under `./data/` and `config/thresholds.yaml`.
 
+**Expose one collection only.** `FACES_STANDALONE=<collection slug>` (set in `run.sh`, default `iia-summit-2026`) makes `/` redirect to that collection and strips every link off its page that leads elsewhere in the app; your working home — indexing, building collections — moves to `/admin`, which is not linked from anywhere public. Gallery pages stay reachable by their unguessable links but are not exposed.
+
 **Nothing is ever deleted on its own.** Indexed galleries persist across restarts, a job interrupted by a restart resumes where it was, and re-submitting a URL that failed resumes rather than starting over. The only way an index goes away is the delete button (or removing `data/` yourself).
 
 On an M1 Pro, expect ~1.2 s per image on CPU; a 1,000-image gallery is roughly 20 minutes. Faces stream in as they're found, so the wall is usable long before the run finishes.
