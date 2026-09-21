@@ -207,6 +207,18 @@ def static_html(url: str) -> Manifest:
     return Manifest("html", title, images, None, False, ["static HTML; total unknown"])
 
 
+SM_ANY_SIZE = re.compile(r"/(Ti|Th|S|M|L|XL|X2|X3|X4|X5|O)/([^/]+)-(?:Ti|Th|S|M|L|XL|X2|X3|X4|X5|O)\.([a-z]{3,4})(?=$|\?)")
+
+
+def thumb_url(source_url: str, fallback_url: str | None) -> str:
+    """A grid-sized image for tiles. The indexed source is 1600 px (~500 KB) —
+    far too heavy for a phone grid. Known hosts get a rewrite to ~800 px; others
+    fall back to the thumbnail the gallery grid itself served."""
+    if "smugmug.com/" in source_url and SM_ANY_SIZE.search(source_url):
+        return SM_ANY_SIZE.sub(lambda m: f"/L/{m.group(2)}-L.{m.group(3)}", source_url)
+    return fallback_url or source_url
+
+
 OG_IMAGE = re.compile(r'<meta[^>]+property=["\']og:image["\'][^>]+content=["\']([^"\']+)["\']', re.I)
 
 

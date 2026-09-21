@@ -106,6 +106,8 @@ Opacity and border-color only, 120ms ease. No transforms, no lifts. A tile shows
 
 **Label (pill).** 11px uppercase, letter-spacing .08em, 1px hairline, 3px 8px padding, 0 radius, `--ink-2` text. Variants change *text only*, not color — except `danger`, which uses `--danger` text for real failures.
 
+**Finder (Find me).** One bordered `--surface` block: a one-line explanation, then two 44px buttons — **Take a selfie** (primary, opens the front camera on phones via `capture="user"`) and **Choose a photo** (secondary, `--surface-2` with a hairline). After a search: the preview thumbnail, a plain result sentence ("Found you in 44 photos · 3 possible"), and a text button *Search another photo*. On phones the block stacks and both buttons go full width. Errors are a sentence that says what to do.
+
 **Progress.** 2px bar in `--accent` on a `--hair` track, full content width. Counts beside it in `--ink-2`. Never a spinner.
 
 **Face tile.** Square crop, 0 radius, no border. Count underneath in 12px `--ink-2`. Hover: 1px `--accent` outline. Active: 2px `--accent` outline.
@@ -124,7 +126,17 @@ Opacity and border-color only, 120ms ease. No transforms, no lifts. A tile shows
 
 ---
 
-## 5. Do / don't
+## 5. Mobile
+
+Most viewers arrive on a phone from a shared link. Below 600px:
+
+- Header compacts: 18px wordmark; the credit keeps the LinkedIn glyph and `oznakash.com` (the full "Created by" stays in the footer).
+- Empty status lines take no space; the page runs title → one line → Find me with no dead air.
+- Face wall is 3 across with 4px gaps; photo grid 2 across. Every tap target is ≥ 44px.
+- On touch devices the "Open original ↗" band is always visible (there is no hover).
+- Images carry intrinsic sizes and `decoding="async"` so nothing shifts while loading; photo tiles load ~800px thumbnails, never the 1600px originals.
+
+## 6. Do / don't
 
 | Do | Don't |
 |---|---|
@@ -137,7 +149,7 @@ Opacity and border-color only, 120ms ease. No transforms, no lifts. A tile shows
 
 ---
 
-## 6. Checklist for any UI change
+## 7. Checklist for any UI change
 
 - [ ] Uses only the tokens in §2 — no new hex values.
 - [ ] No `font-weight` above 400 anywhere.

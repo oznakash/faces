@@ -13,10 +13,12 @@ import cv2
 import numpy as np
 from fastapi import FastAPI, File, HTTPException, UploadFile
 from fastapi.responses import FileResponse, RedirectResponse, StreamingResponse
+from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.staticfiles import StaticFiles
+from starlette.requests import Request
 from pydantic import BaseModel
 
-from . import cluster, collections, db, models, pipeline
+from . import adapters, cluster, collections, db, models, pipeline
 from .config import CROPS, ROOT, cfg
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(message)s")
@@ -34,7 +36,53 @@ async def lifespan(_app):
 
 
 app = FastAPI(title="Faces (local)", lifespan=lifespan)
+app.add_middleware(GZipMiddleware, minimum_size=1000)          # JSON for 800 people is ~120 KB raw, ~20 KB gzipped
 app.mount("/crops", StaticFiles(directory=CROPS, check_dir=False), name="crops")
+
+
+@app.middleware("http")
+async def cache_headers(request: Request, call_next):
+    resp = await call_next(request)
+    if request.url.path.startswith("/crops/"):                 # crops are content-addressed by uuid: never change
+        resp.headers["Cache-Control"] = "public, max-age=31536000, immutable"
+    return resp
+
+
+# In-memory embedding pools. Loading 11k vectors from SQLite is ~150 ms per search;
+# keeping the matrix warm makes a search cost the inference and nothing else.
+# Keyed by a version stamp so any re-index or regroup invalidates it.
+_pools: dict[tuple, tuple] = {}
+
+
+def _pool(kind: str, ident: str, version: str, loader):
+    key = (kind, ident)
+    hit = _pools.get(key)
+    if hit and hit[0] == version:
+        return hit[1]
+    data = loader()
+    _pools[key] = (version, data)
+    return data
+
+
+def _rank(sims, ids, meta):
+    """Best-matching face per image, two tiers. Shared by gallery and collection search."""
+    best: dict[str, dict] = {}
+    t_possible, t_hit = cfg.search.t_possible, cfg.search.t_hit
+    for fid, sim in zip(ids, sims.tolist()):
+        if sim < t_possible:
+            continue
+        m = meta[fid]
+        cur = best.get(m["image_id"])
+        if cur is None or sim > cur["score"]:
+            best[m["image_id"]] = {**m, "score": round(sim, 3)}
+    ranked = sorted(best.values(), key=lambda r: -r["score"])
+    return {"confident": [r for r in ranked if r["score"] >= t_hit],
+            "possible": [r for r in ranked if r["score"] < t_hit],
+            "thresholds": {"t_hit": t_hit, "t_possible": t_possible}}
+
+
+def _with_thumbs(rows):
+    return [{**r, "thumb_url": adapters.thumb_url(r["source_url"], r.get("fallback_url"))} for r in rows]
 INDEX = ROOT / "static" / "index.html"
 NO_CACHE = {"Cache-Control": "no-cache"}         # the page must never be stale after a redesign
 # Standalone: expose exactly one collection. "/" goes there; the working home lives at /admin.
@@ -164,12 +212,12 @@ def person_photos(cid: str):
     if not c:
         raise HTTPException(404, {"error_code": "NOT_FOUND", "message": "person not found"})
     rows = con.execute(
-        "SELECT i.id, i.source_url, i.page_url, i.width, i.height,"
-        "       MAX(f.det_score) AS score, COUNT(f.id) AS faces_of_person, f.bbox"
+        "SELECT i.id, i.source_url, i.fallback_url, i.page_url, i.width, i.height,"
+        "       MAX(f.det_score) AS score, COUNT(f.id) AS faces_of_person"
         " FROM faces f JOIN images i ON i.id=f.image_id"
         " WHERE f.cluster_id=? GROUP BY i.id ORDER BY score DESC", (cid,)).fetchall()
     con.close()
-    return {"person": dict(c), "photos": [dict(r) for r in rows]}
+    return {"person": dict(c), "photos": _with_thumbs([dict(r) for r in rows])}
 
 
 @app.post("/api/galleries/{key}/search")
@@ -177,33 +225,24 @@ async def search(key: str, selfie: UploadFile = File(...)):
     """Selfie -> two-tier photo list. The embedding never leaves this request."""
     con = db.connect()
     gid = _gallery_or_404(con, key)["id"]
+    g = _gallery_or_404(con, key)
     found = _selfie_embedding(await selfie.read())
     q = found[0]["embedding"]                           # largest face (T-C3 default)
-    ids, mat = db.load_embeddings(con, gid)
-    if not ids:
-        con.close()
-        return {"confident": [], "possible": [], "faces_in_selfie": len(found)}
-    sims = mat @ (q / (np.linalg.norm(q) + 1e-9))
-    meta = {r["id"]: dict(r) for r in con.execute(
-        "SELECT f.id, f.image_id, f.bbox, i.source_url, i.page_url FROM faces f"
-        " JOIN images i ON i.id=f.image_id WHERE f.gallery_id=? AND f.embedding IS NOT NULL", (gid,))}
+
+    def load():
+        ids, mat = db.load_embeddings(con, gid)
+        meta = {r["id"]: dict(r) for r in con.execute(
+            "SELECT f.id, f.image_id, i.source_url, i.fallback_url, i.page_url FROM faces f"
+            " JOIN images i ON i.id=f.image_id WHERE f.gallery_id=? AND f.embedding IS NOT NULL", (gid,))}
+        return ids, mat, meta
+    ids, mat, meta = _pool("gallery", gid, f"{g['indexed_at']}:{g['faces_found']}", load)
     con.close()
-    best: dict[str, dict] = {}                         # per image, its best-matching face
-    for fid, s in zip(ids, sims):
-        s = float(s)
-        if s < cfg.search.t_possible:
-            continue
-        m = meta[fid]
-        cur = best.get(m["image_id"])
-        if cur is None or s > cur["score"]:
-            best[m["image_id"]] = {**m, "score": round(s, 3)}
-    ranked = sorted(best.values(), key=lambda r: -r["score"])
-    return {
-        "confident": [r for r in ranked if r["score"] >= cfg.search.t_hit],
-        "possible": [r for r in ranked if r["score"] < cfg.search.t_hit],
-        "faces_in_selfie": len(found),
-        "thresholds": {"t_hit": cfg.search.t_hit, "t_possible": cfg.search.t_possible},
-    }
+    if not ids:
+        return {"confident": [], "possible": [], "faces_in_selfie": len(found)}
+    out = _rank(mat @ (q / (np.linalg.norm(q) + 1e-9)), ids, meta)
+    out["confident"], out["possible"] = _with_thumbs(out["confident"]), _with_thumbs(out["possible"])
+    out["faces_in_selfie"] = len(found)
+    return out
 
 
 @app.post("/api/galleries/{key}/recluster")
@@ -409,13 +448,13 @@ def collection_person_photos(key: str, ccid: str):
     if not person:
         raise HTTPException(404, {"error_code": "NOT_FOUND", "message": "person not found"})
     rows = con.execute(
-        "SELECT i.id, i.source_url, i.page_url, MAX(f.det_score) AS score,"
-        "       g.slug AS source_slug, g.title AS source_title, g.url_canonical AS source_url_page"
+        "SELECT i.id, i.source_url, i.fallback_url, i.page_url, MAX(f.det_score) AS score,"
+        "       g.slug AS source_slug, g.title AS source_title"
         " FROM collection_faces cf JOIN faces f ON f.id=cf.face_id"
         " JOIN images i ON i.id=f.image_id JOIN galleries g ON g.id=i.gallery_id"
-        " WHERE cf.cluster_id=? GROUP BY i.id ORDER BY g.id, score DESC", (ccid,)).fetchall()
+        " WHERE cf.cluster_id=? GROUP BY i.id ORDER BY score DESC", (ccid,)).fetchall()
     con.close()
-    return {"person": dict(person), "photos": [dict(r) for r in rows]}
+    return {"person": dict(person), "photos": _with_thumbs([dict(r) for r in rows])}
 
 
 @app.post("/api/collections/{key}/search")
@@ -425,30 +464,20 @@ async def collection_search(key: str, selfie: UploadFile = File(...)):
     c = _collection_or_404(con, key)
     found = _selfie_embedding(await selfie.read())
     q = found[0]["embedding"]
-    ids, mat = collections.load_embeddings(con, c["id"])
-    if not ids:
-        con.close()
-        return {"confident": [], "possible": [], "faces_in_selfie": len(found)}
-    sims = mat @ (q / (np.linalg.norm(q) + 1e-9))
-    meta = {r["id"]: dict(r) for r in con.execute(
-        "SELECT f.id, f.image_id, i.source_url, i.page_url, g.slug AS source_slug, g.title AS source_title"
-        " FROM faces f JOIN images i ON i.id=f.image_id JOIN galleries g ON g.id=i.gallery_id"
-        " JOIN collection_sources s ON s.gallery_id=g.id"
-        " WHERE s.collection_id=? AND f.embedding IS NOT NULL", (c["id"],))}
+
+    def load():
+        ids, mat = collections.load_embeddings(con, c["id"])
+        meta = {r["id"]: dict(r) for r in con.execute(
+            "SELECT f.id, f.image_id, i.source_url, i.fallback_url, i.page_url, g.slug AS source_slug, g.title AS source_title"
+            " FROM faces f JOIN images i ON i.id=f.image_id JOIN galleries g ON g.id=i.gallery_id"
+            " JOIN collection_sources s ON s.gallery_id=g.id"
+            " WHERE s.collection_id=? AND f.embedding IS NOT NULL", (c["id"],))}
+        return ids, mat, meta
+    ids, mat, meta = _pool("collection", c["id"], f"{c['grouped_at']}:{c['faces']}", load)
     con.close()
-    best: dict[str, dict] = {}
-    for fid, sim in zip(ids, sims):
-        sim = float(sim)
-        if sim < cfg.search.t_possible:
-            continue
-        m = meta[fid]
-        cur = best.get(m["image_id"])
-        if cur is None or sim > cur["score"]:
-            best[m["image_id"]] = {**m, "score": round(sim, 3)}
-    ranked = sorted(best.values(), key=lambda r: -r["score"])
-    return {
-        "confident": [r for r in ranked if r["score"] >= cfg.search.t_hit],
-        "possible": [r for r in ranked if r["score"] < cfg.search.t_hit],
-        "faces_in_selfie": len(found),
-        "thresholds": {"t_hit": cfg.search.t_hit, "t_possible": cfg.search.t_possible},
-    }
+    if not ids:
+        return {"confident": [], "possible": [], "faces_in_selfie": len(found)}
+    out = _rank(mat @ (q / (np.linalg.norm(q) + 1e-9)), ids, meta)
+    out["confident"], out["possible"] = _with_thumbs(out["confident"]), _with_thumbs(out["possible"])
+    out["faces_in_selfie"] = len(found)
+    return out

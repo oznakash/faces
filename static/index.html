@@ -29,10 +29,11 @@
   .mark.inert{cursor:default}
 
   main{max-width:1200px;margin:0 auto;padding:36px 24px 80px}
-  .sub{color:var(--ink-2);margin:0 0 22px;overflow-wrap:anywhere}
+  .sub{color:var(--ink-2);margin:0 0 10px;overflow-wrap:anywhere}
   .note,.status,.empty,h2 small{overflow-wrap:anywhere}
   h1{font-size:28px;letter-spacing:-.005em;margin:0 0 4px}
-  h2{font-size:17px;margin:40px 0 12px;display:flex;align-items:baseline;gap:10px;flex-wrap:wrap}
+  h2{font-size:17px;margin:32px 0 12px;display:flex;align-items:baseline;gap:10px;flex-wrap:wrap}
+  #search h2{margin-top:18px}
   h2 small{color:var(--ink-2);font-size:13px}
 
   form{display:flex;gap:8px;flex-wrap:wrap}
@@ -44,7 +45,8 @@
   .ghost{background:transparent;border:0;padding:0;color:var(--ink);font-size:13px}
   .ghost:hover{text-decoration:underline}
 
-  .status{margin:22px 0 6px;display:flex;gap:14px;align-items:center;flex-wrap:wrap;color:var(--ink-2);min-height:22px;font-size:13px}
+  .status{margin:14px 0 6px;display:flex;gap:14px;align-items:center;flex-wrap:wrap;color:var(--ink-2);font-size:13px}
+  .status:empty,.note:empty{display:none}
   .bar{height:2px;background:var(--hair);flex:1;min-width:160px}
   .bar i{display:block;height:100%;width:0;background:var(--accent);transition:width .3s ease}
   .pill{font-size:11px;letter-spacing:.08em;text-transform:uppercase;padding:3px 8px;border:1px solid var(--hair);color:var(--ink-2)}
@@ -74,10 +76,17 @@
   .ph .s{position:absolute;right:0;top:0;font-size:11px;letter-spacing:.06em;background:var(--overlay);color:var(--overlay-ink);padding:3px 8px}
 
   .empty{color:var(--ink-2);padding:40px 0;text-align:center}
-  .drop{border:1px solid var(--hair-2);background:var(--surface);padding:14px;color:var(--ink-2);display:flex;gap:12px;align-items:center;cursor:pointer;font-size:13px}
-  .drop:hover{border-color:var(--accent)}
-  .drop img{width:56px;height:56px;object-fit:cover}
-  .hidden{display:none}
+  .finder{border:1px solid var(--hair-2);background:var(--surface);padding:16px;display:flex;gap:16px;align-items:center}
+  .finder.over{border-color:var(--accent)}
+  .finder img{width:72px;height:72px;object-fit:cover;flex:none}
+  .finder-body{flex:1;min-width:0;display:flex;flex-direction:column;gap:10px}
+  .finder p{margin:0;font-size:13px;color:var(--ink-2)}
+  .finder .row{gap:8px}
+  .btn{min-height:44px;display:inline-flex;align-items:center;justify-content:center}
+  .btn.alt{background:var(--surface-2);color:var(--ink);border:1px solid var(--hair-2)}
+  .btn.alt:hover{background:var(--surface-2);border-color:var(--accent)}
+  .found{font-size:13px;color:var(--ink)}
+  .hidden{display:none!important}
   .privacy{font-size:12px;color:var(--ink-2);margin-top:8px}
 
   /* Gallery list (home) */
@@ -102,7 +111,14 @@
   .btn.sm{padding:10px 14px;font-size:13px}
   .chk{font-size:13px;color:var(--ink-2);display:flex;gap:6px;align-items:center;margin:4px 0}
   .g .srcs{font-size:12px;color:var(--ink-2);grid-column:1}
-  @media (max-width:600px){ main{padding:24px 16px 60px} .top .in{padding:14px 16px} .g .link{grid-row:auto;align-items:flex-start} .g{grid-template-columns:1fr} }
+  @media (max-width:600px){
+    main{padding:20px 16px 48px} .top .in{padding:12px 16px} .mark{font-size:18px} .credit{font-size:11px;gap:8px} .top .credit span{display:none}
+    h1{font-size:24px} .g .link{grid-row:auto;align-items:flex-start} .g{grid-template-columns:1fr}
+    .finder{flex-direction:column;align-items:stretch} .finder img{width:100%;height:auto;aspect-ratio:1;max-height:240px}
+    .finder .row .btn{flex:1} .wall{grid-template-columns:repeat(3,1fr);gap:4px} .face .n{font-size:11px;padding:4px 0 6px}
+    .photos{gap:4px} h2{margin-top:24px}
+  }
+  @media (hover:none){ .ph a::after{opacity:1;font-size:11px;padding:4px 8px} }
 </style>
 </head>
 <body>
@@ -140,12 +156,18 @@
   <p class="note" id="note"></p>
 
   <section id="search" class="hidden">
-    <h2>Find me <small>upload a selfie — it's processed in memory and never stored</small></h2>
-    <label class="drop" id="drop">
-      <input id="selfie" type="file" accept="image/*" class="hidden">
+    <h2>Find me <small>every photo you're in, from one selfie</small></h2>
+    <div class="finder" id="drop">
       <img id="selfiePreview" class="hidden" alt="">
-      <span id="dropText">Drop a selfie here, or click to choose</span>
-    </label>
+      <div class="finder-body">
+        <p id="dropText">Take a selfie or choose a photo of yourself. It's matched in memory and never stored.</p>
+        <div class="row" id="finderButtons">
+          <label class="btn"><input id="selfieCam" type="file" accept="image/*" capture="user" class="hidden">Take a selfie</label>
+          <label class="btn alt"><input id="selfie" type="file" accept="image/*" class="hidden">Choose a photo</label>
+        </div>
+        <div class="row hidden" id="finderDone"><span class="found" id="foundText"></span><button class="ghost" id="searchReset">Search another photo</button></div>
+      </div>
+    </div>
     <div id="results"></div>
   </section>
 
@@ -245,7 +267,7 @@ function enterView(){
   ['#wallSec','#personSec','#search','#collSec','#listSec'].forEach(x => show(x, false));
   show('#back', true);
   $('#wall').innerHTML = ''; $('#results').innerHTML = ''; $('#note').textContent = ''; setStatus('');
-  $('#selfiePreview').classList.add('hidden'); $('#dropText').textContent = 'Drop a selfie here, or click to choose';
+  resetSearch();
 }
 
 // ---------- submit a gallery
@@ -309,7 +331,7 @@ async function renderWall(provisional){
   show('#wallSec', true); show('#search', true);
   $('#wallCount').textContent = `${fmt(people.length)}${provisional ? ' so far' : ''} · sorted by photo count`;
   $('#wall').innerHTML = people.length ? people.map(p =>
-    `<div class="face" data-id="${p.id}" title="${esc(p.label)}"><img src="${p.crop_url}" alt="${esc(p.label)}" loading="lazy">
+    `<div class="face" data-id="${p.id}" title="${esc(p.label)}"><img src="${p.crop_url}" alt="${esc(p.label)}" width="256" height="256" loading="lazy" decoding="async">
      <div class="n"><b>${fmt(p.image_count)}</b> photo${p.image_count===1?'':'s'}${p.source_count>1?` · ${p.source_count} galleries`:''}</div></div>`).join('')
     : `<div class="empty">No faces found yet.</div>`;
   $('#wall').querySelectorAll('.face').forEach(el => el.onclick = () => showPerson(el.dataset.id, el));
@@ -328,29 +350,50 @@ async function showPerson(cid, el){
 function photoCard(ph, score){
   const src = ph.source_title || '';
   return `<div class="ph" data-image="${esc(ph.id||'')}" data-source="${esc(ph.source_slug||'')}" data-page="${esc(ph.page_url||'')}"${score!=null?` data-score="${score}"`:''}>
-    <img src="${esc(ph.source_url)}" loading="lazy" alt="">
+    <img src="${esc(ph.thumb_url || ph.source_url)}" loading="lazy" decoding="async" alt="">
     <a href="${esc(ph.page_url || ph.source_url)}" target="_blank" rel="noopener" title="${esc(src ? 'Open original · ' + src : 'Open original')}" data-source="${esc(src ? '· ' + src : '')}"></a>
     ${score!=null?`<span class="s">${Math.round(score*100)}%</span>`:''}</div>`;
 }
 $('#closePerson').onclick = () => show('#personSec', false);
 
-// ---------- selfie search (both kinds)
-$('#selfie').onchange = async () => {
-  const file = $('#selfie').files[0]; if (!file) return;
-  $('#selfiePreview').src = URL.createObjectURL(file); $('#selfiePreview').classList.remove('hidden');
+// ---------- selfie search (both kinds): camera or photo, one path
+let previewUrl = null;
+async function runSearch(file){
+  if (!file || !ctx) return;
+  if (previewUrl) URL.revokeObjectURL(previewUrl);
+  previewUrl = URL.createObjectURL(file);
+  $('#selfiePreview').src = previewUrl; show('#selfiePreview', true);
+  show('#finderButtons', false); show('#finderDone', false);
   $('#dropText').textContent = 'Searching…';
+  $('#results').innerHTML = '';
   const fd = new FormData(); fd.append('selfie', file);
-  const r = await fetch(`${ctx.base}/search`, {method:'POST', body: fd});
-  const d = await r.json();
-  if (!r.ok){ $('#dropText').textContent = d.detail?.message || 'Search failed'; return; }
-  $('#dropText').textContent = `${d.confident.length} confident · ${d.possible.length} possible${d.faces_in_selfie>1?` · using the largest of ${d.faces_in_selfie} faces`:''}`;
+  let r, d;
+  try { r = await fetch(`${ctx.base}/search`, {method:'POST', body: fd}); d = await r.json(); }
+  catch (_) { r = {ok:false}; d = {detail:{message:'The search didn’t complete. Check the connection and try again.'}}; }
+  show('#finderDone', true);
+  if (!r.ok){ $('#dropText').textContent = d.detail?.message || 'Search failed'; $('#foundText').textContent = ''; return; }
+  const n = d.confident.length, m = d.possible.length;
+  $('#dropText').textContent = d.faces_in_selfie > 1 ? `Matched the largest of ${d.faces_in_selfie} faces in your photo.` : 'Matched.';
+  $('#foundText').textContent = n ? `Found you in ${fmt(n)} photo${n===1?'':'s'}${m?` · ${fmt(m)} possible`:''}` : (m ? `No confident matches · ${fmt(m)} possible` : 'No matches in this collection');
   $('#results').innerHTML =
-    (d.confident.length ? `<h2>Confident matches <small>${d.confident.length}</small></h2><div class="photos">${d.confident.map(p=>photoCard(p,p.score)).join('')}</div>` : `<div class="empty">No confident matches here.</div>`) +
-    (d.possible.length ? `<h2>Possible matches <small>${d.possible.length} · lower confidence, shown separately on purpose</small></h2><div class="photos">${d.possible.map(p=>photoCard(p,p.score)).join('')}</div>` : '');
-};
+    (n ? `<h2>Your photos <small>${fmt(n)} · tap to open the original</small></h2><div class="photos">${d.confident.map(p=>photoCard(p,p.score)).join('')}</div>`
+       : `<div class="empty">No confident matches. Try a clearer, front-facing photo with good light.</div>`) +
+    (m ? `<h2>Possible <small>${fmt(m)} · lower confidence, kept separate on purpose</small></h2><div class="photos">${d.possible.map(p=>photoCard(p,p.score)).join('')}</div>` : '');
+  if (n) $('#results').scrollIntoView({behavior:'smooth', block:'start'});
+}
+function resetSearch(){
+  if (previewUrl) URL.revokeObjectURL(previewUrl); previewUrl = null;
+  show('#selfiePreview', false); show('#finderDone', false); show('#finderButtons', true);
+  $('#dropText').textContent = "Take a selfie or choose a photo of yourself. It's matched in memory and never stored.";
+  $('#results').innerHTML = ''; $('#selfie').value = ''; $('#selfieCam').value = '';
+}
+$('#selfie').onchange = () => runSearch($('#selfie').files[0]);
+$('#selfieCam').onchange = () => runSearch($('#selfieCam').files[0]);
+$('#searchReset').onclick = resetSearch;
 const drop = $('#drop');
-drop.ondragover = e => { e.preventDefault(); };
-drop.ondrop = e => { e.preventDefault(); $('#selfie').files = e.dataTransfer.files; $('#selfie').onchange(); };
+drop.ondragover = e => { e.preventDefault(); drop.classList.add('over'); };
+drop.ondragleave = () => drop.classList.remove('over');
+drop.ondrop = e => { e.preventDefault(); drop.classList.remove('over'); runSearch(e.dataTransfer.files[0]); };
 
 // ---------- routing: /g/{slug} galleries, /c/{slug} collections, ?g= kept for old links
 const _g = location.pathname.match(/^\/g\/([a-z0-9-]+)/i), _c = location.pathname.match(/^\/c\/([a-z0-9-]+)/i);
