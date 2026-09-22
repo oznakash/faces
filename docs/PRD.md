@@ -178,6 +178,7 @@ v1 ships when **every** item below is true. These are binary, not aspirational.
 - [ ] **D6** Re-submitting an already-indexed URL returns cached results without re-processing.
 - [ ] **D7** Selected photos can be downloaded or shared via a stable link.
 - [ ] **D7b** A **collection** pools several indexed galleries into one set of people at its own short link (`/c/<slug>`): it groups the same person across galleries into one tile (sources are visible and managed on the admin home, not on the page), searches the whole pool from a selfie, labels every result with its source, and offers no indexing of its own. Sources can be added later without re-indexing.
+- [ ] **D7c** Any person in a collection can be shared with one click: a unique link that, pasted into a social app or chat, unfurls as a card in the site's look — the collection's name and that person's face — and opens the collection page directly on that person's photos. The link stays valid when galleries are added later.
 - [ ] **D7a** Every indexed gallery has a short, stable, shareable link (`/g/<slug>`) that opens straight to its face wall — faces → photos → the original on the source page, with no setup for the viewer. The home page lists every indexed gallery with its link.
 
 ### Quality gates
@@ -330,6 +331,8 @@ FIX-1 and FIX-2 are the same event, which makes them a useful pair: the same peo
 | T-E5 | Every result photo | Opens the original on the source gallery's own page, in a new tab |
 | T-E8 | Open a gallery's short link in a fresh browser session | Face wall loads directly; faces → photos → originals all work with no other state |
 | T-E9 | Collection over FIX-1 + FIX-2 | A person present in both galleries is one tile, not two; their photos list shows both sources; a selfie search returns matches labeled by source; the page offers no index form |
+| T-E11 | Copy a person's link, open it in a fresh session | Page opens with that person's photos shown and their tile active; the HTML carries `og:title` = collection name and `og:image` = that face; the image URL returns a JPEG |
+| T-E12 | Share a person, then add a gallery and regroup | The shared link still opens the same person |
 | T-E10 | Add a third gallery to an existing collection | Pool regroups in seconds without re-indexing; the new source appears in the sources list |
 | T-E6 | Job fails for any reason | Specific, actionable message; never a bare "something went wrong" |
 | T-E7 | Keyboard and screen-reader navigation of the face wall | Focusable, labeled, operable *(manual)* |

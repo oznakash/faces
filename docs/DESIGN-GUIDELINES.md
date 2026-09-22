@@ -108,6 +108,8 @@ Opacity and border-color only, 120ms ease. No transforms, no lifts. A tile shows
 
 **Finder (Find me).** One bordered `--surface` block: a one-line explanation and a single 44px **Upload a selfie** button. The whole block accepts a dropped file on desktop (the hint is hidden on touch). No camera capture — the OS picker is the only way in, so the person chooses a photo they already have. After a search: the preview thumbnail, a plain result sentence ("Found you in 44 photos · 3 possible"), and a text button *Search another photo*. On phones the block stacks and both buttons go full width. Errors are a sentence that says what to do.
 
+**Share (person).** A text button *Copy link* beside *close* in the person header; becomes *Link copied* for 1.5s. The unfurled card is the site's card: the face on the left (square, 400px), the collection's name as the title, one line of description. No logos, no colored backgrounds.
+
 **Progress.** 2px bar in `--accent` on a `--hair` track, full content width. Counts beside it in `--ink-2`. Never a spinner.
 
 **Face tile.** Square crop, 0 radius, no border. Count underneath in 12px `--ink-2`. Hover: 1px `--accent` outline. Active: 2px `--accent` outline.

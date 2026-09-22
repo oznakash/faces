@@ -19,13 +19,14 @@ from contextlib import asynccontextmanager
 import cv2
 import numpy as np
 from fastapi import Depends, FastAPI, File, Header, HTTPException, UploadFile
-from fastapi.responses import FileResponse, RedirectResponse, StreamingResponse
+from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse, Response, StreamingResponse
 from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.staticfiles import StaticFiles
 from starlette.requests import Request
 from pydantic import BaseModel
 
 from . import adapters, cluster, collections, db, models, pipeline
+from html import escape as _h
 from .config import CROPS, DATA, DB_PATH, ROOT, cfg
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(message)s")
@@ -194,6 +195,87 @@ def gallery_page(slug: str):
 def collection_page(slug: str):
     """A collection's shareable link: pooled face wall + selfie search, no indexing."""
     return FileResponse(INDEX, headers=NO_CACHE)
+
+
+# ---------------------------------------------------------------- share a person
+# A person's link is keyed on a FACE, not a cluster: clusters are rebuilt (new ids) on
+# every regroup, faces are forever. The link resolves to whichever person that face
+# belongs to when it is opened, so adding a gallery never breaks a link already shared.
+def face_short(face_id: str) -> str:
+    return face_id.replace("-", "")[:12]
+
+
+def _public_base(request: Request) -> str:
+    env = os.environ.get("FACES_PUBLIC_URL", "").strip().rstrip("/")
+    if env:
+        return env
+    return f"{request.url.scheme}://{request.headers.get('host', request.url.netloc)}"
+
+
+def _face_in_collection(con, cid: str, short: str):
+    if not (8 <= len(short) <= 32) or not all(ch in "0123456789abcdef" for ch in short.lower()):
+        return None
+    return con.execute(
+        "SELECT f.id, f.crop_key, cc.id AS cluster_id, cc.label, cc.image_count, cc.source_count"
+        " FROM faces f JOIN collection_faces cf ON cf.face_id=f.id"
+        " JOIN collection_clusters cc ON cc.id=cf.cluster_id"
+        " WHERE cf.collection_id=? AND replace(f.id,'-','') LIKE ? LIMIT 1", (cid, short.lower() + "%")).fetchone()
+
+
+def _index_with(meta: str) -> HTMLResponse:
+    html = INDEX.read_text(encoding="utf-8").replace("</head>", meta + "\n</head>", 1)
+    return HTMLResponse(html, headers=NO_CACHE)
+
+
+@app.get("/c/{slug}/f/{face}")
+def person_page(slug: str, face: str, request: Request):
+    """Share link for one person. Same page as the collection, but served with Open Graph
+    tags (crawlers don't run JS) and told which person to open."""
+    con = db.connect()
+    c = collections.get(con, slug)
+    hit = _face_in_collection(con, c["id"], face) if c else None
+    con.close()
+    if not c or not hit:
+        return FileResponse(INDEX, headers=NO_CACHE)
+    base = _public_base(request)
+    url = f"{base}/c/{c['slug']}/f/{face_short(hit['id'])}"
+    img = f"{base}/og/{face_short(hit['id'])}.jpg"
+    n_src = hit["source_count"]
+    desc = f"{hit['image_count']:,} photo{'s' if hit['image_count'] != 1 else ''} of this person across {n_src} {'gallery' if n_src == 1 else 'galleries'}. See them all — or find yourself."
+    meta = f"""
+  <meta property="og:type" content="website">
+  <meta property="og:site_name" content="Faces">
+  <meta property="og:title" content="{_h(c['name'])}">
+  <meta property="og:description" content="{_h(desc)}">
+  <meta property="og:url" content="{_h(url)}">
+  <meta property="og:image" content="{_h(img)}">
+  <meta property="og:image:width" content="400"><meta property="og:image:height" content="400">
+  <meta property="og:image:alt" content="{_h(hit['label'])}">
+  <meta name="twitter:card" content="summary">
+  <meta name="twitter:title" content="{_h(c['name'])}">
+  <meta name="twitter:description" content="{_h(desc)}">
+  <meta name="twitter:image" content="{_h(img)}">
+  <link rel="canonical" href="{_h(url)}">
+  <script>window.__FACES_OPEN={json.dumps({"collection": c["slug"], "cluster_id": hit["cluster_id"], "face": face_short(hit["id"])})};</script>"""
+    return _index_with(meta)
+
+
+@app.get("/og/{face}.jpg")
+def og_image(face: str):
+    """The shared face as a 400x400 JPEG — the format every social crawler accepts."""
+    con = db.connect()
+    row = con.execute("SELECT crop_key FROM faces WHERE replace(id,'-','') LIKE ? AND crop_key IS NOT NULL LIMIT 1",
+                      (face.lower() + "%",)).fetchone() if 8 <= len(face) <= 32 else None
+    con.close()
+    if not row:
+        raise HTTPException(404, {"error_code": "NOT_FOUND", "message": "no such face"})
+    crop = cv2.imread(str(CROPS / row["crop_key"]))
+    if crop is None:
+        raise HTTPException(404, {"error_code": "NOT_FOUND", "message": "crop missing"})
+    crop = cv2.resize(crop, (400, 400), interpolation=cv2.INTER_CUBIC)
+    ok, buf = cv2.imencode(".jpg", crop, [cv2.IMWRITE_JPEG_QUALITY, 88])
+    return Response(buf.tobytes(), media_type="image/jpeg",
+                    headers={"Cache-Control": "public, max-age=31536000, immutable"})
 
 
 # ---------------------------------------------------------------- galleries
@@ -524,7 +606,21 @@ def collection_person_photos(key: str, ccid: str):
         " JOIN images i ON i.id=f.image_id JOIN galleries g ON g.id=i.gallery_id"
         " WHERE cf.cluster_id=? GROUP BY i.id ORDER BY score DESC", (ccid,)).fetchall()
     con.close()
-    return {"person": dict(person), "photos": _with_thumbs([dict(r) for r in rows])}
+    p = dict(person)
+    p["share_path"] = f"/c/{c['slug']}/f/{face_short(p['rep_face_id'])}" if p.get("rep_face_id") else None
+    return {"person": p, "photos": _with_thumbs([dict(r) for r in rows])}
+
+
+@app.get("/api/collections/{key}/face/{face}")
+def collection_face(key: str, face: str):
+    """Which person a shared face belongs to right now."""
+    con = db.connect()
+    c = _collection_or_404(con, key)
+    hit = _face_in_collection(con, c["id"], face)
+    con.close()
+    if not hit:
+        raise HTTPException(404, {"error_code": "NOT_FOUND", "message": "That face isn't in this collection any more."})
+    return {"cluster_id": hit["cluster_id"], "label": hit["label"]}
 
 
 @app.post("/api/collections/{key}/search", dependencies=[Depends(_rate_limit)])
