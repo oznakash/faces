@@ -16,6 +16,8 @@ Photo galleries are published as a flat wall of images. A conference, a wedding,
 
 **Share it** — every indexed gallery gets a short link (`/g/abc123`) that opens straight to its face wall, and the home page lists everything indexed so far.
 
+**Share a person** — one click copies a link to any face in a collection. Pasted into a chat or social app it unfurls as a card with that face and the collection's name; opening it lands on that person's photos. Links are keyed on a face, not a cluster, so they survive regrouping.
+
 **Pool it** — a *collection* groups several indexed galleries into one set of people, with its own link (`/c/abc123`). It lists its sources, lets you search the whole pool with a selfie, and shows which gallery each match came from. Collections can't index anything; sources are added from the home page.
 
 Every result links back to the original photo on the source gallery. Faces is a lens on someone else's gallery, not a copy of it.

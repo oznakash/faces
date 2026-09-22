@@ -177,7 +177,7 @@
   </section>
 
   <section id="personSec" class="hidden">
-    <h2><span id="personTitle"></span> <small id="personCount"></small> <button class="ghost" id="closePerson">close</button></h2>
+    <h2><span id="personTitle"></span> <small id="personCount"></small> <button class="ghost hidden" id="sharePerson" title="Copy a link to this person">Copy link</button> <button class="ghost" id="closePerson">close</button></h2>
     <div class="photos" id="photos"></div>
   </section>
 </main>
@@ -330,16 +330,24 @@ async function openGallery(key){
 }
 
 // ---------- collection view: sources + search + pooled wall. No indexing here.
-async function openCollection(key){
+async function openCollection(key, openFace){
   const r = await fetch(`/api/collections/${key}`);
   if (!r.ok){ setStatus(pill('not found','bad') + " that link doesn't point at a collection"); return; }
   const c = await r.json();
   enterView(); show('#f', false); show('#back', false); wordmark(false);
   ctx = { kind:'collection', id: c.id, base: `/api/collections/${c.id}`, personUrl: cid => `/api/collections/${c.id}/people/${cid}/photos` };
   history.replaceState(null, '', `/c/${c.slug}`);
+  ctx.slug = c.slug;
   $('#pageTitle').textContent = c.name;
   $('#pageSub').textContent = `${fmt(c.people)} people across ${c.sources.length} ${c.sources.length===1?'gallery':'galleries'} · ${fmt(c.faces)} faces pooled`;
-  renderWall(false);
+  await renderWall(false);
+  if (openFace){
+    // a shared link: the server told us the person (or we ask), then open them directly
+    let cid = (window.__FACES_OPEN && window.__FACES_OPEN.face === openFace) ? window.__FACES_OPEN.cluster_id : null;
+    if (!cid){ const fr = await fetch(`/api/collections/${c.id}/face/${openFace}`); if (fr.ok) cid = (await fr.json()).cluster_id; }
+    if (cid) showPerson(cid, document.querySelector(`.face[data-id="${cid}"]`));
+    else setStatus(pill('link expired') + " that face isn't in this collection any more");
+  }
 }
 
 // ---------- wall + person (both kinds)
@@ -361,8 +369,18 @@ async function showPerson(cid, el){
   $('#personTitle').textContent = d.person.label;
   $('#personCount').textContent = `${fmt(d.photos.length)} photos · click any to open the original`;
   $('#photos').innerHTML = d.photos.map(ph => photoCard(ph)).join('');
+  sharePath = d.person.share_path || null;
+  show('#sharePerson', !!sharePath);
+  if (sharePath) history.replaceState(null, '', sharePath);
   $('#personSec').scrollIntoView({behavior:'smooth', block:'start'});
 }
+let sharePath = null;
+$('#sharePerson').onclick = async () => {
+  if (!sharePath) return;
+  const url = location.origin + sharePath;
+  try { await navigator.clipboard.writeText(url); } catch(_) { prompt('Copy this link', url); }
+  const b = $('#sharePerson'); b.textContent = 'Link copied'; setTimeout(() => b.textContent = 'Copy link', 1500);
+};
 // Every card carries its details (source gallery, page, score) so the grid can be filtered or searched later.
 function photoCard(ph, score){
   const src = ph.source_title || '';
@@ -371,7 +389,7 @@ function photoCard(ph, score){
     <a href="${esc(ph.page_url || ph.source_url)}" target="_blank" rel="noopener" title="${esc(src ? 'Open original · ' + src : 'Open original')}" data-source="${esc(src ? '· ' + src : '')}"></a>
     ${score!=null?`<span class="s">${Math.round(score*100)}%</span>`:''}</div>`;
 }
-$('#closePerson').onclick = () => show('#personSec', false);
+$('#closePerson').onclick = () => { show('#personSec', false); document.querySelectorAll('.face.active').forEach(x => x.classList.remove('active')); if (ctx && ctx.kind === 'collection' && ctx.slug) history.replaceState(null, '', `/c/${ctx.slug}`); };
 
 // ---------- selfie search (both kinds): camera or photo, one path
 let previewUrl = null;
@@ -412,9 +430,9 @@ drop.ondragleave = () => drop.classList.remove('over');
 drop.ondrop = e => { e.preventDefault(); drop.classList.remove('over'); runSearch(e.dataTransfer.files[0]); };
 
 // ---------- routing: /g/{slug} galleries, /c/{slug} collections, ?g= kept for old links
-const _g = location.pathname.match(/^\/g\/([a-z0-9-]+)/i), _c = location.pathname.match(/^\/c\/([a-z0-9-]+)/i);
+const _g = location.pathname.match(/^\/g\/([a-z0-9-]+)/i), _c = location.pathname.match(/^\/c\/([a-z0-9-]+)(?:\/f\/([a-f0-9]+))?/i);
 const _q = new URLSearchParams(location.search).get('g');
-if (_c) openCollection(_c[1]); else if (_g || _q) openGallery(_g ? _g[1] : _q); else { wordmark(true); loadHome(); }
+if (_c) openCollection(_c[1], _c[2] || null); else if (_g || _q) openGallery(_g ? _g[1] : _q); else { wordmark(true); loadHome(); }
 </script>
 </body>
 </html>
