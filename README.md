@@ -61,6 +61,14 @@ Then open <http://localhost:8000>, paste a gallery URL, and watch the wall fill 
 
 On an M1 Pro, expect ~1.2 s per image on CPU; a 1,000-image gallery is roughly 20 minutes. Faces stream in as they're found, so the wall is usable long before the run finishes.
 
+## Inspect one photo
+
+```bash
+./.venv/bin/python -m faces.inspect photo.jpg
+```
+
+Reads everything a single file carries — EXIF, XMP, IPTC, the embedded thumbnail, filename pattern, faces — and ranks what it gives away: GPS, capture time and home timezone, camera serials, names written into the file, people tagged by name, edit history. Local and offline; `--geocode` adds a street address from OpenStreetMap and `--describe` adds what a vision model reads off the pixels. See [docs/INSPECT.md](docs/INSPECT.md), which also takes apart theyseeyourphotos.com.
+
 ## Hosting (search only)
 
 The hosted profile is a **search box, not an indexer**: galleries are indexed on your machine and published to the server. Nothing in the repo contains photos or face data.
@@ -87,6 +95,7 @@ Selfie search is rate-limited per IP (20/min, burst 8). The originals are never 
 | [**PRD**](docs/PRD.md) | Why, what, how · 4 jobs-to-be-done · definition of done · definition of good · 45 test cases |
 | [**Technical Spec**](docs/TECH-SPEC.md) | Architecture, adapters, pipeline, clustering, data model, evaluation, cost, privacy, risks |
 | [**Design Guidelines**](docs/DESIGN-GUIDELINES.md) | Tokens, type, layout and components — the look of the source galleries, applied to a people index. The UI implements this and nothing else |
+| [**Inspect**](docs/INSPECT.md) | What one photo gives away: the `faces.inspect` tool, and a teardown of theyseeyourphotos.com |
 
 ## Test fixtures
 
